@@ -1,0 +1,40 @@
+open(127.0.0.1:8787) -> ok in 0 ms
+t=  0.80s seq=7     src=sim    power=112W cad=62rpm age=0ms lat=8.9ms
+t=  1.90s seq=8     src=sim    power=101W cad=57rpm age=0ms lat=5.3ms
+t=  2.99s seq=9     src=sim    power=98W cad=56rpm age=0ms lat=5.1ms
+t=  3.01s >>> send {"type":"sim","cadenceRpm":0} (ok)
+t=  4.10s seq=10    src=sim    power=75W cad=45rpm age=0ms lat=7.6ms
+t=  5.20s seq=11    src=sim    power=53W cad=34rpm age=0ms lat=7.8ms
+t=  6.29s seq=12    src=sim    power=39W cad=26rpm age=0ms lat=6.6ms
+t=  7.39s seq=13    src=sim    power=39W cad=26rpm age=0ms lat=3.2ms
+t=  8.49s seq=14    src=sim    power=39W cad=26rpm age=0ms lat=10.0ms
+t=  9.00s >>> send {"type":"sim","cadenceRpm":60} (ok)
+t=  9.59s seq=15    src=sim    power=53W cad=34rpm age=0ms lat=5.1ms
+t= 10.68s seq=16    src=sim    power=77W cad=46rpm age=0ms lat=1.8ms
+t= 11.79s seq=17    src=sim    power=96W cad=55rpm age=0ms lat=4.8ms
+t= 12.89s seq=18    src=sim    power=92W cad=53rpm age=0ms lat=9.7ms
+t= 13.98s seq=19    src=sim    power=103W cad=58rpm age=0ms lat=6.1ms
+t= 15.01s >>> send {"type":"sim","cadenceRpm":90} (ok)
+t= 15.08s seq=20    src=sim    power=150W cad=77rpm age=0ms lat=2.6ms
+t= 16.18s seq=21    src=sim    power=161W cad=81rpm age=0ms lat=7.2ms
+t= 17.28s seq=22    src=sim    power=186W cad=90rpm age=0ms lat=2.1ms
+t= 18.38s seq=23    src=sim    power=192W cad=92rpm age=0ms lat=9.2ms
+t= 19.48s seq=24    src=sim    power=172W cad=85rpm age=0ms lat=6.7ms
+t= 20.57s seq=25    src=sim    power=175W cad=86rpm age=0ms lat=3.0ms
+t= 21.00s >>> send {"type":"sim","cadenceRpm":110} (ok)
+t= 21.67s seq=26    src=sim    power=219W cad=101rpm age=0ms lat=0.9ms
+t= 22.78s seq=27    src=sim    power=245W cad=109rpm age=0ms lat=6.7ms
+t= 23.88s seq=28    src=sim    power=238W cad=107rpm age=0ms lat=7.5ms
+t= 24.97s seq=29    src=sim    power=238W cad=107rpm age=0ms lat=5.5ms
+t= 26.07s seq=30    src=sim    power=245W cad=109rpm age=0ms lat=3.0ms
+t= 27.01s >>> send {"type":"sim","cadenceRpm":0} (ok)
+t= 27.17s seq=31    src=sim    power=178W cad=87rpm age=0ms lat=5.1ms
+t= 28.27s seq=32    src=sim    power=124W cad=67rpm age=0ms lat=2.3ms
+t= 29.37s seq=33    src=sim    power=85W cad=50rpm age=0ms lat=12.2ms
+t= 30.47s seq=34    src=sim    power=85W cad=50rpm age=0ms lat=6.8ms
+t= 31.57s seq=35    src=sim    power=85W cad=50rpm age=0ms lat=5.8ms
+t= 32.66s seq=36    src=sim    power=0W cad=0rpm age=0ms lat=1.8ms
+t= 33.77s seq=37    src=sim    power=0W cad=0rpm age=0ms lat=6.3ms
+t= 34.86s seq=38    src=sim    power=0W cad=0rpm age=0ms lat=1.5ms
+t= 35.96s seq=39    src=sim    power=0W cad=0rpm age=0ms lat=5.6ms
+SUMMARY: 33 telemetry frames in 36 s (0.92 Hz), mean inter-arrival 1099 ms (max 1107), mean latency 5.6 ms (max 12.2), 3534 polls, state=2
