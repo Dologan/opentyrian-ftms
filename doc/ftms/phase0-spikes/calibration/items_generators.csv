@@ -1,0 +1,8 @@
+id,name,power_per_frame,units_per_s,cost
+0,None,0,0.0,0
+1,Standard MR-9,10,347.8,500
+2,Advanced MR-12,14,487.0,2000
+3,Gencore Custom MR-12,19,660.9,5000
+4,Standard MicroFusion,25,869.6,10000
+5,Advanced MircoFusion,30,1043.5,15000
+6,Gravitron Pulse-Wave,50,1739.1,50000
