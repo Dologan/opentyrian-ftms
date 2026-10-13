@@ -1,0 +1,435 @@
+diff --git a/src/bike.c b/src/bike.c
+new file mode 100644
+index 0000000..014e0e3
+--- /dev/null
++++ b/src/bike.c
+@@ -0,0 +1,100 @@
++// SPIKE (throwaway): see bike.h.
++#include "bike.h"
++
++#include "logging.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++typedef struct { unsigned long tick; unsigned watts, rpm; } BikeRow;
++
++static BikeRow *rows = NULL;
++static size_t row_count = 0;
++static bool active = false;
++static unsigned long tick = 0;
++static unsigned cur_watts = 0, cur_rpm = 0;
++static unsigned acc = 0;   // remainder in 1/BIKE_REF_WATTS units of base_add
++
++static bool add_row(unsigned long t, unsigned w, unsigned rpm)
++{
++	BikeRow *grown = realloc(rows, (row_count + 1) * sizeof *rows);
++	if (grown == NULL)
++		return false;
++	rows = grown;
++	rows[row_count++] = (BikeRow){ t, w, rpm };
++	return true;
++}
++
++bool bike_load(const char *spec)
++{
++	row_count = 0;
++	active = false;
++	
++	if (strncmp(spec, "const:", 6) == 0)
++	{
++		unsigned w, rpm = 0;
++		if (sscanf(spec + 6, "%u,%u", &w, &rpm) < 1)
++		{
++			logError("--regress-bike: bad const spec '%s'", spec);
++			return false;
++		}
++		active = add_row(0, w, rpm);
++		return active;
++	}
++	
++	FILE *f = fopen(spec, "rb");
++	if (f == NULL)
++	{
++		logError("--regress-bike: cannot open '%s'", spec);
++		return false;
++	}
++	char line[256];
++	unsigned long last = 0;
++	while (fgets(line, sizeof line, f))
++	{
++		if (line[0] == '#' || line[0] == '\n' || line[0] == '\r' || strncmp(line, "tick", 4) == 0)
++			continue;
++		unsigned long t;
++		unsigned w, rpm = 0;
++		if (sscanf(line, "%lu,%u,%u", &t, &w, &rpm) < 2 || t < last || !add_row(t, w, rpm))
++		{
++			logError("--regress-bike: bad row '%s' (rows must be tick,watts[,rpm] with ascending ticks)", line);
++			fclose(f);
++			return false;
++		}
++		last = t;
++	}
++	fclose(f);
++	active = row_count > 0;
++	return active;
++}
++
++bool bike_active(void) { return active; }
++
++void bike_level_start(void)
++{
++	tick = 0;
++	acc = 0;
++	cur_watts = cur_rpm = 0;
++}
++
++unsigned bike_power_add(unsigned base_add)
++{
++	size_t i = 0;
++	while (i + 1 < row_count && rows[i + 1].tick <= tick)
++		++i;
++	cur_watts = rows[i].watts;
++	cur_rpm = rows[i].rpm;
++	++tick;
++	
++	// add = watts * base_add / 150, remainder carried: exact and drift-free.
++	acc += cur_watts * base_add;
++	unsigned add = acc / BIKE_REF_WATTS;
++	acc %= BIKE_REF_WATTS;
++	return add;
++}
++
++unsigned bike_watts(void) { return cur_watts; }
++unsigned bike_cadence_rpm(void) { return cur_rpm; }
++unsigned long bike_tick(void) { return tick; }
+diff --git a/src/bike.h b/src/bike.h
+new file mode 100644
+index 0000000..f320958
+--- /dev/null
++++ b/src/bike.h
+@@ -0,0 +1,38 @@
++// SPIKE (throwaway): exercise-bike input model for the Phase 0 viability study.
++//
++// A bike source maps the game tick to (watts, cadence).  The generator refill
++// in the level loop (tyrian2.c "Power Bar") then uses bike_power_add() instead
++// of the fixed `powerAdd`.  Everything here is integer-only and a pure function
++// of the tick, so a scripted trace replays bit-identically in the regress
++// harness.  A live BLE feed would implement the same two calls (sample the
++// latest FTMS notification once per tick and quantise it).
++#ifndef BIKE_H
++#define BIKE_H
++
++#include <stdbool.h>
++
++// 150 W is the "neutral" effort: it refills exactly `powerAdd` per tick, i.e.
++// the equipped generator's stock rate.  Other wattages scale linearly.
++#define BIKE_REF_WATTS 150
++
++// Loads a trace: "const:WATTS[,RPM]" or a CSV file of "tick,watts[,rpm]" rows
++// ('#' comments; piecewise-constant, the last row with tick <= now applies).
++// Returns false (and logs) on a parse error.
++bool bike_load(const char *spec);
++bool bike_active(void);
++
++// Called when a level (re)starts: rewinds the tick and the accumulator.
++void bike_level_start(void);
++
++// Advances one game tick and returns the generator refill for this tick,
++// replacing `power += powerAdd`.  `base_add` is the equipped generator's
++// powerAdd (the value 150 W maps to).  Exact: the sub-unit remainder is carried
++// in an integer accumulator, so 150 W reproduces the stock refill bit for bit.
++unsigned bike_power_add(unsigned base_add);
++
++// Last sampled values (for the HUD and the log).
++unsigned bike_watts(void);
++unsigned bike_cadence_rpm(void);
++unsigned long bike_tick(void);
++
++#endif
+diff --git a/src/modern_hud.c b/src/modern_hud.c
+index 3100fe9..ec1782c 100644
+--- a/src/modern_hud.c
++++ b/src/modern_hud.c
+@@ -18,6 +18,8 @@
+  */
+ #include "modern_hud.h"
+ 
++#include "bike.h"  // SPIKE
++
+ #include "config.h"
+ #include "episodes.h"
+ #include "fonthand.h"
+@@ -659,6 +661,16 @@ static void hud_draw_special(const HudPanel *p, int pi, int y, bool big)
+ // Generator name (extra information: the original in-game HUD had no label,
+ // only the power-reserve bar).  Shown only in the roomy layouts; the power bar
+ // itself is always part of the vertical vitals block.
++// SPIKE: bike readout ("187W 85RPM") on its own row above the generator name.
++// Presentation only: it reads bike_watts()/bike_cadence_rpm(), which the level
++// loop already sampled for this tick, and never touches game state or the RNG.
++static void hud_draw_bike(const HudPanel *p, int y)
++{
++	char buf[32];
++	snprintf(buf, sizeof buf, "%uW %uRPM", bike_watts(), bike_cadence_rpm());
++	hud_text(p->surface, hud_start(p, JE_textWidth(buf, TINY_FONT)), y, buf, HUD_VALUE_BANK, HUD_VALUE_BRIGHT);
++}
++
+ static void hud_draw_generator(const HudPanel *p, int pi, int y)
+ {
+ 	char raw[64], buf[72];
+@@ -913,7 +925,8 @@ static void hud_draw_status_panel(const HudPanel *p)
+ 
+ 	// Bottom stack: the generator name (roomy panels) over the cheat notice.
+ 	const int gen_y = hud_cheat_y(p->w) - ST_GEN_GAP - 6;
+-	const int lower_top = p->roomy ? gen_y : hud_cheat_y(p->w);
++	const int bike_rows = (p->roomy && bike_active()) ? 8 : 0;  // SPIKE
++	const int lower_top = (p->roomy ? gen_y : hud_cheat_y(p->w)) - bike_rows;
+ 
+ 	// Shield, armor and power reserve: three vertical bars, bottom-up, the whole
+ 	// block (label row + bars + value row) centred in the free space between the
+@@ -926,7 +939,11 @@ static void hud_draw_status_panel(const HudPanel *p)
+ 	hud_draw_vitals(p, 0, label_y, VIT_BAR_H_1P);
+ 
+ 	if (p->roomy)
++	{
+ 		hud_draw_generator(p, 0, gen_y);
++		if (bike_active())  // SPIKE
++			hud_draw_bike(p, gen_y - 8);
++	}
+ 
+ 	hud_draw_cheat(p);
+ }
+diff --git a/src/params.c b/src/params.c
+index e19ca3f..1ef2f8c 100644
+--- a/src/params.c
++++ b/src/params.c
+@@ -16,6 +16,7 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+  */
++#include "bike.h"
+ #include "params.h"
+ 
+ #include "arg_parse.h"
+@@ -157,6 +158,8 @@ const Options *JE_paramOptions(void)
+ 		{ 306, 0,   "regress-stick",     true },
+ 		{ 307, 0,   "regress-stick-log", true },
+ 		{ 308, 0,   "regress-reverse-y", false },
++		{ 440, 0,   "regress-bike",      true },  // SPIKE
++		{ 441, 0,   "regress-bike-log",  true },  // SPIKE
+ 		
+ 		{ 0, 0, NULL, false }
+ 	};
+@@ -330,6 +333,8 @@ void JE_paramCheck(int argc, char *argv[])
+ 			logInfo("                               axis values X,Y and run the whole stick path headless");
+ 			logInfo("  --regress-stick-log=FILE     Log the per-tick ship x/y and x/y velocity of a");
+ 			logInfo("                               --regress-stick run to FILE");
++			logInfo("  --regress-bike=FILE|const:W  SPIKE: scripted watts[,rpm] trace drives the generator refill");
++			logInfo("  --regress-bike-log=FILE      SPIKE: per-tick bike/power log");
+ 			logInfo("  --regress-reverse-y          Regress only: force the reverse-controls smoothie on");
+ 			logInfo("  --regress-front-weapon=N      Regress only: front weapon id (0-42) for --regress-script/--regress-level");
+ 			logInfo("  --regress-front-power=N       Regress only: front weapon power (1-11) for --regress-script/--regress-level");
+@@ -921,6 +926,15 @@ void JE_paramCheck(int argc, char *argv[])
+ 			regress_stick_log_path = option.arg;
+ 			break;
+ 
++		case 440: // --regress-bike=FILE|const:WATTS[,RPM]  (SPIKE)
++			if (!bike_load(option.arg))
++				exit(EXIT_FAILURE);
++			break;
++
++		case 441: // --regress-bike-log=FILE  (SPIKE)
++			regress_bike_log_path = option.arg;
++			break;
++
+ 		case 308: // --regress-reverse-y
+ 			regress_reverse_y = 1;
+ 			break;
+diff --git a/src/regress.c b/src/regress.c
+index 1ec05bb..6cd0bcc 100644
+--- a/src/regress.c
++++ b/src/regress.c
+@@ -19,6 +19,7 @@
+ #ifndef _WIN32
+ #define _XOPEN_SOURCE 700
+ #endif
++#include "bike.h"
+ #include "regress.h"
+ #include "regress_flow.h"
+ 
+@@ -210,6 +211,9 @@ int regress_stick = 0;
+ int regress_stick_x = 0;
+ int regress_stick_y = 0;
+ const char *regress_stick_log_path = NULL;
++const char *regress_bike_log_path = NULL;  // SPIKE
++static FILE *regress_bike_log = NULL;
++static unsigned long regress_bike_lines = 0;
+ int regress_reverse_y = 0;
+ 
+ // --regress-front-weapon / --regress-front-power: -1 = leave the built-in
+@@ -595,6 +599,20 @@ bool regress_screen_active(void)
+ 	return regress_screen != NULL;
+ }
+ 
++void regress_bike_log_tick(unsigned watts, unsigned rpm, unsigned add, unsigned power_after)
++{
++	if (regress_bike_log_path == NULL)
++		return;
++	if (regress_bike_log == NULL)
++	{
++		regress_bike_log = fopen(regress_bike_log_path, "wb");
++		if (regress_bike_log == NULL)
++			logFatal("Failed to open bike log '%s'.", regress_bike_log_path);
++	}
++	++regress_bike_lines;
++	fprintf(regress_bike_log, "%lu %u %u %u %u\n", regress_bike_lines, watts, rpm, add, power_after);
++}
++
+ bool regress_stick_active(void)
+ {
+ 	return regress_stick != 0;
+@@ -747,6 +765,16 @@ static Uint64 regress_state_hash(void)
+ 
+ 	hash_u64le(&hash, (Uint64)mt_rand_state_hash());
+ 
++	// SPIKE: `power` is not part of the stock state hash (the generator reserve
++	// only feeds shield regen, and a stock run is a pure function of tick).  With
++	// a bike feed it is the one new input, so fold it in only then; this keeps
++	// every existing baseline byte-identical.
++	if (bike_active())
++	{
++		hash_u32le(&hash, (Uint32)power);
++		hash_u32le(&hash, (Uint32)lastPower);
++	}
++
+ 	for (int i = 0; i < 2; ++i)
+ 	{
+ 		const Player *p = &player[i];
+@@ -1491,6 +1519,13 @@ void regress_frame_reset(void)
+ 
+ void regress_finish(void)
+ {
++	if (regress_bike_log != NULL)
++	{
++		fclose(regress_bike_log);
++		regress_bike_log = NULL;
++		logInfo("Regression: wrote %lu bike ticks to '%s'.", regress_bike_lines, regress_bike_log_path);
++	}
++
+ 	if (regress_stick_log != NULL)
+ 	{
+ 		fclose(regress_stick_log);
+diff --git a/src/regress.h b/src/regress.h
+index 18b789c..3ab219c 100644
+--- a/src/regress.h
++++ b/src/regress.h
+@@ -123,6 +123,11 @@ void regress_apply_loadout(void);
+ 
+ bool regress_stick_active(void);
+ 
++// SPIKE: --regress-bike-log=FILE ("tick watts rpm power_add power" per refill tick).
++extern const char *regress_bike_log_path;
++void regress_bike_log_tick(unsigned watts, unsigned rpm, unsigned add, unsigned power_after);
++
++
+ // Called once per player-1 tick from JE_playerMovement; writes the log line when
+ // --regress-stick-log was given, otherwise does nothing.
+ void regress_stick_log_tick(int player_x, int player_y, int x_velocity, int y_velocity);
+diff --git a/src/tyrian2.c b/src/tyrian2.c
+index 49fd667..22a61a2 100644
+--- a/src/tyrian2.c
++++ b/src/tyrian2.c
+@@ -16,6 +16,7 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+  */
++#include "bike.h"
+ #include "tyrian2.h"
+ 
+ #include "animlib.h"
+@@ -833,6 +834,7 @@ start_level_first:
+ 	backPos2 = 0;
+ 	backPos3 = 0;
+ 	power = 0;
++	bike_level_start();  // SPIKE
+ 	starfield_speed = 1;
+ 
+ 	/* Setup player ship graphics */
+@@ -1200,9 +1202,20 @@ level_loop:
+ 		}
+ 		else
+ 		{
+-			power += powerAdd;
+-			if (power > 900)
+-				power = 900;
++			if (bike_active())  // SPIKE: watts-derived refill replaces powerAdd
++			{
++				unsigned add = bike_power_add(powerAdd);
++				power += add;
++				if (power > 900)
++					power = 900;
++				regress_bike_log_tick(bike_watts(), bike_cadence_rpm(), add, power);
++			}
++			else
++			{
++				power += powerAdd;
++				if (power > 900)
++					power = 900;
++			}
+ 
+ 			temp = power / 10;
+ 
+diff --git a/test/bike/ride1.csv b/test/bike/ride1.csv
+new file mode 100644
+index 0000000..a6e16e0
+--- /dev/null
++++ b/test/bike/ride1.csv
+@@ -0,0 +1,16 @@
++# tick,watts,rpm (scripted bike trace; piecewise-constant)
++tick,watts,rpm
++0,100,70
++100,100,70
++120,115,73
++140,130,76
++160,145,79
++180,160,82
++200,175,85
++220,190,88
++240,205,91
++260,220,94
++280,235,97
++300,300,105
++400,0,0
++450,150,85
+diff --git a/tools/check_bike.sh b/tools/check_bike.sh
+new file mode 100755
+index 0000000..6cd557f
+--- /dev/null
++++ b/tools/check_bike.sh
+@@ -0,0 +1,25 @@
++#!/bin/bash
++# check_bike.sh -- SPIKE guard for --regress-bike (watts-driven generator refill).
++#   1. flag OFF: demo3-d4 still equals its committed baseline
++#   2. 150 W constant == flag-off frames (150 W is the neutral rate)
++#   3. scripted ride twice: identical frames, state hashes and per-tick log
++#   4. scripted ride differs from flag-off (the power change is observable)
++set -uo pipefail
++ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
++DATA=${TYRIAN_DATA:-data}; T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
++run() { local l=$1; shift
++  SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy ./opentyrian --data="$DATA" \
++    --regress-out="$T/$l.f" --regress-state-out="$T/$l.s" "$@" >"$T/$l.log" 2>&1 || { echo "FAIL $l: run failed"; tail "$T/$l.log"; exit 1; }; }
++S="--regress-script=1:3 --regress-seed=32402394 --regress-detail=2 --regress-frames=600"
++R=test/bike/ride1.csv
++run demo3 --regress-demo=3 --regress-detail=4
++cmp -s "$T/demo3.f" test/regress/demo3-d4.txt || { echo "FAIL flag-off demo3-d4 != baseline"; exit 1; }
++echo "PASS bike-off: demo3-d4 matches committed baseline"
++run off $S; run c150 $S --regress-bike=const:150
++cmp -s "$T/off.f" "$T/c150.f" || { echo "FAIL 150 W frames != flag-off"; exit 1; }
++echo "PASS bike-150W: frames identical to flag-off (neutral rate)"
++run a $S --regress-bike=$R --regress-bike-log="$T/a.log2"; run b $S --regress-bike=$R --regress-bike-log="$T/b.log2"
++for x in f s log2; do cmp -s "$T/a.$x" "$T/b.$x" || { echo "FAIL ride not deterministic ($x)"; exit 1; }; done
++echo "PASS bike-determinism: frames, state hashes and per-tick log identical across runs"
++cmp -s "$T/off.f" "$T/a.f" && { echo "FAIL ride frames equal flag-off"; exit 1; }
++echo "PASS bike-observable: ride frames differ from flag-off (first diff line $(diff "$T/off.f" "$T/a.f" | head -1))"

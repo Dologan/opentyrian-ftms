@@ -1,0 +1,25 @@
+PASS no-t2000-data self-test: 2000 files are found under any name; shared files are exempt
+PASS no-t2000-data: no Tyrian 2000 file in the tree (79 manifest entries, shared 2.1 files exempt)
+PASS variant-bootstrap: early errors, 2.1 frame/state identity, single root, 2000 provider diagnostics both ways, no user files
+SKIP chmod-only failure: directory remains writable; portable obstruction cases passed
+PASS user-paths: migration, originals, repeat, failures/retry, save roundtrip, 2000 save codec, shared configs, demos, platform/portable roots, regress/selftest isolation
+PASS game-rules
+PASS game-rules: 2.1 event 68 runtime assertion
+PASS demo1-d4: 6695 lines, 12.03s
+PASS demo2-d4: 5050 lines, 5.91s
+PASS demo3-d4: 2254 lines, 1.60s
+PASS demo4-d4: 1794 lines, 1.41s
+PASS demo5-d4: 3043 lines, 2.30s
+PASS scenario-water-d4: 1200 lines, 0.91s
+PASS scenario-flip-d4: 3600 lines, 4.18s
+PASS scenario-spotlight-d4: 1200 lines, 1.11s
+PASS scenario-blur-d4: 1200 lines, 1.05s
+PASS modern-demo1-d4: 6695 lines, 27.75s
+PASS modern-wide-demo1-d4: 6695 lines, 23.36s
+PASS modern-crt-scanlines: 120 lines, 0.90s
+PASS depth-tyrian-on-d4: 1200 lines, depth off/on state identical, on baseline ok, 
+PASS depth-held-pause-wide-d4: 350 lines, effects off/lighting/on state identical, baseline ok, 
+PASS depth-held-pause-smooth-d4: 350 lines, effects off/lighting/on state identical, baseline ok, 
+PASS modern-pause: state/frame aggregate and pause coverage
+2000 quick: skipped (no data)
+All 16 regression cases passed in 28.2s.

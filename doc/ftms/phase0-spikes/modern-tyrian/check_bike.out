@@ -1,0 +1,4 @@
+PASS bike-off: demo3-d4 matches committed baseline
+PASS bike-150W: frames identical to flag-off (neutral rate)
+PASS bike-determinism: frames, state hashes and per-tick log identical across runs
+PASS bike-observable: ride frames differ from flag-off (first diff line 102,600c102,600)
