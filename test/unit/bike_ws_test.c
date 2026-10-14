@@ -1,0 +1,630 @@
+/*
+ * bike_ws_test.c - LOCAL-ONLY test of src/bike_ws.c (not run in CI; POSIX
+ * sockets, needs SDL3 + SDL3_net).  Driven by tools/check_bike_ws.sh.
+ *
+ *   bike_ws_test fake                    protocol cases against an in-process fake WebSocket server
+ *   bike_ws_test blackhole HOST PORT     unroutable address: the loop must keep ticking
+ *   bike_ws_test refused PORT            nothing listens: backoff 0.5,1,2,4,5 s and keeps ticking
+ *   bike_ws_test live HOST PORT SIGFILE  real flywheel-bridge (--source sim): watts follow
+ *                                        cadence; then SIGFILE is created, the script kills and
+ *                                        restarts the bridge, and the client must reconnect
+ *
+ * Exit status 0 = all checks passed.
+ */
+#include "bike_ws.h"
+
+#include <SDL3/SDL.h>
+
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+static int failures;
+static int checks;
+
+#define CHECK(cond, ...) \
+	do { \
+		++checks; \
+		if (!(cond)) { \
+			++failures; \
+			printf("  FAIL %s:%d: ", __FILE__, __LINE__); \
+			printf(__VA_ARGS__); \
+			printf("\n"); \
+		} \
+	} while (0)
+
+static uint64_t now_us(void)
+{
+	return SDL_GetTicksNS() / 1000u + 100000000u; /* +100 s: a sample age never underflows the clock */
+}
+
+/* One tick of the pretend game loop: polls the client and tracks the slowest
+ * poll and the largest gap between ticks. */
+static BikeMailbox mb;
+static uint64_t max_poll_us, max_gap_us, last_tick_us, ticks;
+static const char *max_poll_state = "";
+
+static void tick(void)
+{
+	uint64_t t0 = now_us(), t1;
+
+	bike_ws_poll(&mb, t0);
+	t1 = now_us();
+	if (t1 - t0 > max_poll_us)
+	{
+		max_poll_us = t1 - t0;
+		max_poll_state = bike_ws_state_name(bike_ws_state()); /* state after the call */
+	}
+	if (last_tick_us != 0 && t0 - last_tick_us > max_gap_us)
+		max_gap_us = t0 - last_tick_us;
+	last_tick_us = t0;
+	++ticks;
+}
+
+static void reset_loop_stats(void)
+{
+	max_poll_us = max_gap_us = last_tick_us = ticks = 0;
+}
+
+/* ---- fake server ------------------------------------------------------------ */
+
+static int lsock = -1, csock = -1;
+static uint16_t lport;
+static uint8_t srv_rx[65536];
+static int srv_rx_len;
+static const char accept_good[] = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
+static const char *accept_to_send = accept_good;
+
+static void srv_listen(void)
+{
+	struct sockaddr_in a;
+	socklen_t al = sizeof a;
+	int one = 1;
+
+	lsock = socket(AF_INET, SOCK_STREAM, 0);
+	setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+	memset(&a, 0, sizeof a);
+	a.sin_family = AF_INET;
+	a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	if (bind(lsock, (struct sockaddr *)&a, sizeof a) != 0 || listen(lsock, 4) != 0)
+	{
+		perror("bind/listen");
+		exit(2);
+	}
+	getsockname(lsock, (struct sockaddr *)&a, &al);
+	lport = ntohs(a.sin_port);
+	fcntl(lsock, F_SETFL, O_NONBLOCK);
+}
+
+static void srv_drop(void)
+{
+	if (csock >= 0)
+		close(csock);
+	csock = -1;
+	srv_rx_len = 0;
+}
+
+static bool srv_have_request;
+
+static void srv_service(void)
+{
+	if (csock < 0)
+	{
+		csock = accept(lsock, NULL, NULL);
+		if (csock >= 0)
+		{
+			fcntl(csock, F_SETFL, O_NONBLOCK);
+			srv_rx_len = 0;
+			srv_have_request = false;
+		}
+	}
+	if (csock >= 0)
+	{
+		ssize_t n = recv(csock, srv_rx + srv_rx_len, sizeof srv_rx - (size_t)srv_rx_len, 0);
+		if (n > 0)
+			srv_rx_len += (int)n;
+		if (!srv_have_request && srv_rx_len >= 4)
+		{
+			srv_rx[srv_rx_len] = '\0';
+			char *eoh = strstr((char *)srv_rx, "\r\n\r\n");
+			if (eoh != NULL)
+			{
+				char resp[256];
+				int used = (int)(eoh - (char *)srv_rx) + 4, rl;
+				CHECK(strncmp((char *)srv_rx, "GET /ws HTTP/1.1", 16) == 0, "request line");
+				CHECK(strstr((char *)srv_rx, "Upgrade: websocket") != NULL, "Upgrade header");
+				CHECK(strstr((char *)srv_rx, "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==") != NULL, "key header");
+				memmove(srv_rx, srv_rx + used, (size_t)(srv_rx_len - used));
+				srv_rx_len -= used;
+				rl = snprintf(resp, sizeof resp,
+				              "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+				              "Connection: Upgrade\r\nsec-websocket-accept:   %s \r\n\r\n", accept_to_send);
+				send(csock, resp, (size_t)rl, MSG_NOSIGNAL);
+				srv_have_request = true;
+			}
+		}
+	}
+}
+
+static void step(void)
+{
+	srv_service();
+	tick();
+	SDL_DelayNS(500000);
+}
+
+static bool pump_until(bool (*cond)(void), int timeout_ms)
+{
+	uint64_t end = now_us() + (uint64_t)timeout_ms * 1000u;
+	while (now_us() < end)
+	{
+		step();
+		if (cond())
+			return true;
+	}
+	return false;
+}
+
+static void pump_ms(int ms)
+{
+	uint64_t end = now_us() + (uint64_t)ms * 1000u;
+	while (now_us() < end)
+		step();
+}
+
+static int build_frame(uint8_t *out, uint8_t opcode, bool fin, const void *payload, int len)
+{
+	int n = 0;
+	out[n++] = (uint8_t)((fin ? 0x80 : 0) | opcode);
+	if (len < 126)
+		out[n++] = (uint8_t)len;
+	else
+	{
+		out[n++] = 126;
+		out[n++] = (uint8_t)(len >> 8);
+		out[n++] = (uint8_t)len;
+	}
+	memcpy(out + n, payload, (size_t)len);
+	return n + len;
+}
+
+static void srv_send_raw(const uint8_t *b, int n)
+{
+	send(csock, b, (size_t)n, MSG_NOSIGNAL);
+}
+
+static void srv_send_frame(uint8_t opcode, bool fin, const char *payload)
+{
+	uint8_t buf[2048];
+	int n = build_frame(buf, opcode, fin, payload, (int)strlen(payload));
+	srv_send_raw(buf, n);
+}
+
+/* Reads one client frame (must be masked) into payload; returns opcode or -1. */
+static int srv_read_frame(char *payload, int cap, int *plen_out)
+{
+	uint64_t end = now_us() + 2000000u;
+	while (now_us() < end)
+	{
+		step();
+		if (srv_rx_len >= 2)
+		{
+			int plen = srv_rx[1] & 0x7f, hdr = 2, i, op = srv_rx[0] & 0x0f;
+			if (plen == 126)
+			{
+				if (srv_rx_len < 4)
+					continue;
+				plen = (srv_rx[2] << 8) | srv_rx[3];
+				hdr = 4;
+			}
+			CHECK((srv_rx[1] & 0x80) != 0, "client frame must be masked");
+			if (srv_rx_len < hdr + 4 + plen)
+				continue;
+			for (i = 0; i < plen && i < cap - 1; ++i)
+				payload[i] = (char)(srv_rx[hdr + 4 + i] ^ srv_rx[hdr + (i & 3)]);
+			payload[plen < cap - 1 ? plen : cap - 1] = '\0';
+			*plen_out = plen;
+			memmove(srv_rx, srv_rx + hdr + 4 + plen, (size_t)(srv_rx_len - hdr - 4 - plen));
+			srv_rx_len -= hdr + 4 + plen;
+			return op;
+		}
+	}
+	return -1;
+}
+
+static bool c_open(void) { return bike_ws_state() == BIKE_WS_OPEN && csock >= 0 && srv_have_request; }
+static bool c_backoff(void) { return bike_ws_state() == BIKE_WS_BACKOFF; }
+static bool c_streaming(void) { return mb.link == BIKE_LINK_STREAMING; }
+static uint32_t seq_mark;
+static bool c_newseq(void) { return mb.has_sample && mb.latest.seq != seq_mark; }
+
+static void expect_sample(const char *json_frame_payload, uint32_t seq_before)
+{
+	seq_mark = seq_before;
+	srv_send_frame(0x1, true, json_frame_payload);
+}
+
+static int q16_milli(bq16 q)
+{
+	return (int)(((int64_t)q * 1000) / 65536);
+}
+
+static void run_fake(void)
+{
+	char pl[256];
+	int plen, op;
+	uint32_t s0;
+
+	printf("fake-server protocol cases\n");
+	srv_listen();
+	CHECK(bike_ws_open("127.0.0.1", lport), "open");
+	CHECK(!bike_ws_open("", 1) || 1, "open(empty) must not crash");
+	CHECK(bike_ws_open("127.0.0.1", lport), "reopen");
+	CHECK(pump_until(c_open, 3000), "handshake completes (state=%s)", bike_ws_state_name(bike_ws_state()));
+	op = srv_read_frame(pl, sizeof pl, &plen);
+	CHECK(op == 1 && strcmp(pl, "{\"type\":\"hello\",\"client\":\"game\",\"v\":1}") == 0, "hello frame, got op=%d '%s'", op, pl);
+	CHECK(mb.link == BIKE_LINK_WAITING, "open without status or telemetry is WAITING (%d)", mb.link);
+
+	/* status handling */
+	srv_send_frame(0x1, true, "{\"type\":\"status\",\"state\":\"scanning\",\"source\":\"ftms\"}");
+	pump_ms(30);
+	CHECK(mb.link == BIKE_LINK_WAITING, "status scanning -> WAITING (%d)", mb.link);
+	srv_send_frame(0x1, true, "{\"state\":\"streaming\",\"type\":\"status\",\"device\":{\"name\":\"x\",\"services\":[\"a\",\"b\"]}}");
+	CHECK(pump_until(c_streaming, 500), "status streaming (even with nested device, reordered) -> STREAMING");
+	srv_send_frame(0x1, true, "{\"type\":\"status\",\"state\":\"reconnecting\"}");
+	pump_ms(30);
+	CHECK(mb.link == BIKE_LINK_WAITING, "status reconnecting -> WAITING");
+	CHECK(!mb.has_sample, "status never creates a sample");
+
+	/* reordered keys, nested age before the fields, nulls, extra members */
+	s0 = mb.latest.seq;
+	expect_sample("{\"age\":{\"cadence\":10,\"power\":0},\"source\":\"sim\",\"powerW\":123.5,"
+	              "\"cadenceRpm\":null,\"v\":1,\"seq\":7,\"t\":1.5e3,\"wall\":1700000000000.5,\"type\":\"telemetry\"}", s0);
+	CHECK(pump_until(c_newseq, 500), "reordered telemetry parsed");
+	CHECK(mb.latest.seq == 7, "seq 7, got %u", (unsigned)mb.latest.seq);
+	CHECK(mb.latest.power_valid && q16_milli(mb.latest.power_w) == 123500, "power 123.5, got %d", q16_milli(mb.latest.power_w));
+	CHECK(!mb.latest.cadence_valid, "cadence null -> unknown");
+	CHECK(mb.link == BIKE_LINK_STREAMING, "fresh telemetry makes the link STREAMING even after a non-streaming status");
+
+	/* power null + cadence number, scientific notation, string-in-string trap */
+	expect_sample("{\"type\":\"telemetry\",\"v\":1,\"seq\":8,\"note\":\"powerW\\\":999\",\"powerW\":null,\"cadenceRpm\":9.0e1,"
+	              "\"age\":{}}", 7);
+	CHECK(pump_until(c_newseq, 500), "telemetry 2");
+	CHECK(!mb.latest.power_valid && mb.latest.cadence_valid && q16_milli(mb.latest.cadence_rpm) == 90000,
+	      "power null / cadence 90, got pv=%d cad=%d", mb.latest.power_valid, q16_milli(mb.latest.cadence_rpm));
+
+	/* power given as a non-number is treated as unknown, not 0 */
+	expect_sample("{\"type\":\"telemetry\",\"v\":1,\"seq\":9,\"powerW\":\"oops\",\"cadenceRpm\":60}", 8);
+	CHECK(pump_until(c_newseq, 500), "telemetry 3");
+	CHECK(!mb.latest.power_valid, "non-numeric power -> unknown");
+
+	/* v != 1 and missing v are ignored; a later v=1 works */
+	expect_sample("{\"type\":\"telemetry\",\"v\":2,\"seq\":10,\"powerW\":500,\"cadenceRpm\":60}", 9);
+	pump_ms(50);
+	CHECK(mb.latest.seq == 9, "v=2 ignored (seq still %u)", (unsigned)mb.latest.seq);
+	expect_sample("{\"type\":\"telemetry\",\"seq\":11,\"powerW\":500}", 9);
+	pump_ms(50);
+	CHECK(mb.latest.seq == 9, "missing v ignored");
+	expect_sample("{\"type\":\"telemetry\",\"v\":1,\"seq\":12,\"powerW\":150,\"cadenceRpm\":80}", 9);
+	CHECK(pump_until(c_newseq, 500), "v=1 after v=2");
+	CHECK(mb.latest.seq == 12 && q16_milli(mb.latest.power_w) == 150000, "values after v=2");
+
+	/* garbage and unknown types leave the link alone */
+	srv_send_frame(0x1, true, "not json at all {{{");
+	srv_send_frame(0x1, true, "{\"type\":\"mystery\",\"powerW\":1}");
+	srv_send_frame(0x1, true, "{\"type\":\"telemetry\",\"v\":1,\"powerW\":");  /* truncated */
+	pump_ms(50);
+	CHECK(bike_ws_state() == BIKE_WS_OPEN && mb.latest.seq == 12, "garbage ignored");
+
+	/* age backdates the sample */
+	expect_sample("{\"type\":\"telemetry\",\"v\":1,\"seq\":13,\"powerW\":150,\"cadenceRpm\":80,\"age\":{\"power\":2500}}", 12);
+	CHECK(pump_until(c_newseq, 500), "aged sample");
+	CHECK(now_us() - mb.latest.arrival_us >= 2500000u && now_us() - mb.latest.arrival_us < 2700000u,
+	      "arrival backdated by ~2.5 s, delta=%llu us", (unsigned long long)(now_us() - mb.latest.arrival_us));
+
+	/* seq collision after a bridge restart still yields a change */
+	expect_sample("{\"type\":\"telemetry\",\"v\":1,\"seq\":13,\"powerW\":10}", 12);
+	pump_ms(50);
+	CHECK(mb.latest.seq != 13 && q16_milli(mb.latest.power_w) == 10000, "same seq twice -> bumped, seq=%u", (unsigned)mb.latest.seq);
+
+	/* partial reads: one byte per poll */
+	{
+		uint8_t buf[512];
+		const char *j = "{\"type\":\"telemetry\",\"v\":1,\"seq\":40,\"powerW\":77.25,\"cadenceRpm\":55}";
+		int n = build_frame(buf, 0x1, true, j, (int)strlen(j)), i;
+		seq_mark = mb.latest.seq;
+		for (i = 0; i < n; ++i)
+		{
+			srv_send_raw(buf + i, 1);
+			pump_ms(1);
+			CHECK(i == n - 1 || mb.latest.seq != 40, "no early parse at byte %d", i);
+		}
+		CHECK(pump_until(c_newseq, 500) && mb.latest.seq == 40 && q16_milli(mb.latest.power_w) == 77250, "byte-by-byte frame");
+	}
+
+	/* fragmentation with an interleaved ping, 16-bit length continuation */
+	{
+		char big[300], j[600];
+		uint8_t buf[1024];
+		int n, half;
+		memset(big, 'x', sizeof big - 1);
+		big[sizeof big - 1] = '\0';
+		snprintf(j, sizeof j, "{\"type\":\"telemetry\",\"v\":1,\"junk\":\"%s\",\"seq\":41,\"powerW\":200,\"cadenceRpm\":90}", big);
+		half = (int)strlen(j) / 2;
+		seq_mark = mb.latest.seq;
+		n = build_frame(buf, 0x1, false, j, half);
+		srv_send_raw(buf, n);
+		srv_send_frame(0x9, true, "ping!");
+		op = srv_read_frame(pl, sizeof pl, &plen);
+		CHECK(op == 0xA && plen == 5 && strcmp(pl, "ping!") == 0, "pong echoes the ping payload (op=%d '%s')", op, pl);
+		CHECK(mb.latest.seq != 41, "not parsed before FIN");
+		n = build_frame(buf, 0x0, true, j + half, (int)strlen(j) - half);
+		srv_send_raw(buf, n);
+		CHECK(pump_until(c_newseq, 500) && mb.latest.seq == 41 && q16_milli(mb.latest.power_w) == 200000, "fragmented message reassembled");
+		CHECK(mb.latest.cadence_valid, "fields after the fragment boundary survive");
+	}
+
+	/* oversized message is skipped, link stays up; binary is ignored */
+	{
+		static char huge[12000];
+		uint8_t *buf = malloc(13000);
+		int n;
+		memset(huge, 'y', sizeof huge - 1);
+		huge[sizeof huge - 1] = '\0';
+		n = build_frame(buf, 0x1, true, "{\"type\":\"telemetry\",\"v\":1,\"seq\":50,\"powerW\":1}", 48);
+		(void)n;
+		/* build a 12000-byte text message as 3 fragments of 4000 bytes */
+		n = build_frame(buf, 0x1, false, huge, 4000);
+		srv_send_raw(buf, n);
+		n = build_frame(buf, 0x0, false, huge, 4000);
+		srv_send_raw(buf, n);
+		n = build_frame(buf, 0x0, true, huge, 4000);
+		srv_send_raw(buf, n);
+		srv_send_frame(0x2, true, "binary");
+		pump_ms(80);
+		CHECK(bike_ws_state() == BIKE_WS_OPEN, "oversized/binary messages do not drop the link");
+		free(buf);
+		seq_mark = mb.latest.seq;
+		srv_send_frame(0x1, true, "{\"type\":\"telemetry\",\"v\":1,\"seq\":51,\"powerW\":3}");
+		CHECK(pump_until(c_newseq, 500) && mb.latest.seq == 51, "still parsing after oversized message");
+	}
+
+	/* close frame: echoed, then reconnect after backoff */
+	{
+		uint8_t cl[2] = { 0x03, 0xe8 }, buf[16];
+		int n = build_frame(buf, 0x8, true, cl, 2);
+		srv_send_raw(buf, n);
+		op = srv_read_frame(pl, sizeof pl, &plen);
+		CHECK(op == 0x8 && plen == 2 && (uint8_t)pl[0] == 0x03 && (uint8_t)pl[1] == 0xe8, "close echoed (op=%d)", op);
+		CHECK(pump_until(c_backoff, 500), "close -> BACKOFF");
+		CHECK(mb.link == BIKE_LINK_CONNECTING, "link CONNECTING during backoff");
+		srv_drop();
+		CHECK(pump_until(c_open, 3000), "reconnects after close");
+		(void)srv_read_frame(pl, sizeof pl, &plen); /* hello */
+	}
+
+	/* TCP drop (no close frame) */
+	srv_drop();
+	CHECK(pump_until(c_backoff, 1500), "abrupt drop -> BACKOFF");
+	CHECK(pump_until(c_open, 3000), "reconnects after abrupt drop");
+	(void)srv_read_frame(pl, sizeof pl, &plen);
+
+	/* bad Sec-WebSocket-Accept is rejected */
+	accept_to_send = "AAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+	srv_drop();
+	{
+		uint64_t end = now_us() + 4000000u;
+		bool seen_backoff_after_bad = false;
+		while (now_us() < end && !seen_backoff_after_bad)
+		{
+			step();
+			if (srv_have_request && bike_ws_state() == BIKE_WS_BACKOFF)
+				seen_backoff_after_bad = true;
+			CHECK(!(srv_have_request && bike_ws_state() == BIKE_WS_OPEN), "must not open with a bad accept");
+		}
+		CHECK(seen_backoff_after_bad, "bad accept -> BACKOFF");
+	}
+	accept_to_send = accept_good;
+	srv_drop();
+	CHECK(pump_until(c_open, 8000), "recovers once the accept value is right");
+
+	/* send_text is masked and arrives intact */
+	CHECK(bike_ws_send_text("{\"type\":\"sim\",\"cadenceRpm\":90}"), "send_text");
+	{
+		bool got = false;
+		while ((op = srv_read_frame(pl, sizeof pl, &plen)) >= 0)
+			if (op == 1 && strstr(pl, "\"sim\"") != NULL) { got = true; break; }
+		CHECK(got, "sim frame arrived, masked");
+	}
+
+	bike_ws_close();
+	CHECK(bike_ws_state() == BIKE_WS_IDLE, "close -> IDLE");
+	bike_ws_poll(&mb, now_us());
+	CHECK(mb.link == BIKE_LINK_OFF, "closed -> link OFF");
+	close(lsock);
+	srv_drop();
+}
+
+/* ---- blackhole / refused ------------------------------------------------------ */
+
+static void run_blackhole(const char *host, uint16_t port)
+{
+	uint64_t start = now_us(), end = start + 12000000u;
+	int last_state = -1;
+
+	printf("blackhole %s:%u for 12 s: the loop must keep ticking\n", host, (unsigned)port);
+	CHECK(bike_ws_open(host, port), "open");
+	reset_loop_stats();
+	while (now_us() < end)
+	{
+		tick();
+		if ((int)bike_ws_state() != last_state)
+		{
+			last_state = (int)bike_ws_state();
+			printf("  +%5.2fs state=%s link=%d\n", (double)(now_us() - start) / 1e6, bike_ws_state_name(bike_ws_state()), mb.link);
+		}
+		SDL_DelayNS(1000000);
+	}
+	printf("  ticks=%llu max_poll=%llu us (ended in %s) max_gap=%llu us\n", (unsigned long long)ticks,
+	       (unsigned long long)max_poll_us, max_poll_state, (unsigned long long)max_gap_us);
+	CHECK(ticks > 6000, "loop ran freely (%llu ticks in 12 s)", (unsigned long long)ticks);
+	CHECK(max_poll_us < 20000, "no poll took 20 ms or more (max %llu us)", (unsigned long long)max_poll_us);
+	CHECK(max_gap_us < 100000, "no gap between ticks over 100 ms (max %llu us)", (unsigned long long)max_gap_us);
+	CHECK(mb.link == BIKE_LINK_CONNECTING && !mb.has_sample, "link CONNECTING, no sample");
+	bike_ws_close();
+}
+
+static void run_refused(uint16_t port)
+{
+	uint64_t start = now_us(), end = start + 13000000u;
+	int last_state = -1, n_backoffs = 0;
+	uint64_t backoff_at[16];
+
+	printf("refused 127.0.0.1:%u for 13 s: backoff 0.5, 1, 2, 4, 5 s\n", (unsigned)port);
+	CHECK(bike_ws_open("127.0.0.1", port), "open");
+	reset_loop_stats();
+	while (now_us() < end)
+	{
+		tick();
+		if ((int)bike_ws_state() != last_state)
+		{
+			last_state = (int)bike_ws_state();
+			if (last_state == BIKE_WS_BACKOFF && n_backoffs < 16)
+				backoff_at[n_backoffs++] = now_us();
+		}
+		SDL_DelayNS(1000000);
+	}
+	/* entering BACKOFF at t0..: gaps between consecutive entries = backoff + attempt time */
+	{
+		static const double want[] = { 0.5, 1.0, 2.0, 4.0, 5.0 };
+		int i;
+		printf("  backoff entries: %d\n", n_backoffs);
+		CHECK(n_backoffs >= 5, "at least 5 attempts in 13 s (%d)", n_backoffs);
+		for (i = 1; i < n_backoffs && i <= 5; ++i)
+		{
+			double gap = (double)(backoff_at[i] - backoff_at[i - 1]) / 1e6;
+			printf("  gap %d: %.3f s (want ~%.1f)\n", i, gap, want[i - 1]);
+			CHECK(gap > want[i - 1] - 0.05 && gap < want[i - 1] + 0.25, "backoff gap %d = %.3f s", i, gap);
+		}
+	}
+	printf("  max_poll=%llu us (ended in %s) max_gap=%llu us\n", (unsigned long long)max_poll_us, max_poll_state,
+	       (unsigned long long)max_gap_us);
+	CHECK(max_poll_us < 20000 && max_gap_us < 100000, "never blocked (poll %llu us, gap %llu us)",
+	      (unsigned long long)max_poll_us, (unsigned long long)max_gap_us);
+	bike_ws_close();
+}
+
+/* ---- live bridge --------------------------------------------------------------- */
+
+static bool file_exists(const char *p)
+{
+	return access(p, F_OK) == 0;
+}
+
+/* Runs until pred() or timeout, ticking at ~1 kHz. */
+static bool wait_for(bool (*pred)(void), int timeout_ms)
+{
+	uint64_t end = now_us() + (uint64_t)timeout_ms * 1000u;
+	while (now_us() < end)
+	{
+		tick();
+		if (pred())
+			return true;
+		SDL_DelayNS(1000000);
+	}
+	return false;
+}
+
+static bool l_sample(void) { return mb.has_sample && mb.link == BIKE_LINK_STREAMING; }
+static bool l_down(void) { return mb.link != BIKE_LINK_STREAMING; }
+static uint32_t l_seq_mark;
+static bool l_newer(void) { return mb.latest.seq != l_seq_mark && mb.link == BIKE_LINK_STREAMING; }
+
+/* Sets sim cadence and waits until the smoothed power settles; returns watts. */
+static double settle(int rpm, int wait_s)
+{
+	char cmd[96];
+	uint64_t end;
+	snprintf(cmd, sizeof cmd, "{\"type\":\"sim\",\"cadenceRpm\":%d}", rpm);
+	CHECK(bike_ws_send_text(cmd), "send sim %d", rpm);
+	end = now_us() + (uint64_t)wait_s * 1000000u;
+	while (now_us() < end)
+	{
+		tick();
+		SDL_DelayNS(1000000);
+	}
+	return (double)q16_milli(mb.latest.power_w) / 1000.0;
+}
+
+static void run_live(const char *host, uint16_t port, const char *sigfile)
+{
+	double w0, w60, w90, w110;
+	uint32_t seq_a;
+	bool saw_drop;
+
+	printf("live bridge %s:%u\n", host, (unsigned)port);
+	CHECK(bike_ws_open(host, port), "open");
+	reset_loop_stats();
+	CHECK(wait_for(l_sample, 8000), "streaming with a sample within 8 s (state=%s link=%d)", bike_ws_state_name(bike_ws_state()), mb.link);
+	printf("  first sample: seq=%u power=%d.%03d valid=%d cadence=%d.%03d valid=%d\n", (unsigned)mb.latest.seq,
+	       q16_milli(mb.latest.power_w) / 1000, q16_milli(mb.latest.power_w) % 1000, mb.latest.power_valid,
+	       q16_milli(mb.latest.cadence_rpm) / 1000, q16_milli(mb.latest.cadence_rpm) % 1000, mb.latest.cadence_valid);
+	l_seq_mark = mb.latest.seq;
+	CHECK(wait_for(l_newer, 3000), "seq advances");
+	seq_a = mb.latest.seq;
+
+	w0 = settle(0, 10);
+	w60 = settle(60, 10);
+	w90 = settle(90, 8);
+	w110 = settle(110, 8);
+	printf("  watts at cadence 0/60/90/110: %.1f %.1f %.1f %.1f\n", w0, w60, w90, w110);
+	CHECK(w0 < w60 && w60 < w90 && w90 < w110, "watts rise with cadence");
+	CHECK(w110 > 150.0 && w60 > 30.0, "plausible magnitudes");
+	CHECK(mb.latest.seq != seq_a, "samples kept arriving");
+	CHECK(max_poll_us < 20000, "poll never slow (%llu us)", (unsigned long long)max_poll_us);
+
+	if (sigfile != NULL)
+	{
+		FILE *f = fopen(sigfile, "w");
+		if (f != NULL)
+			fclose(f);
+		printf("  A_DONE: waiting for the script to kill and restart the bridge\n");
+		saw_drop = wait_for(l_down, 30000);
+		CHECK(saw_drop, "link drop observed after the bridge was killed");
+		printf("  drop seen: state=%s link=%d; ticks continued: max_gap=%llu us\n", bike_ws_state_name(bike_ws_state()), mb.link,
+		       (unsigned long long)max_gap_us);
+		l_seq_mark = mb.latest.seq;
+		CHECK(wait_for(l_sample, 40000) && file_exists(sigfile), "reconnected and streaming again (state=%s link=%d)",
+		      bike_ws_state_name(bike_ws_state()), mb.link);
+		l_seq_mark = mb.latest.seq;
+		CHECK(wait_for(l_newer, 5000), "fresh samples after reconnect (seq %u)", (unsigned)mb.latest.seq);
+		CHECK(max_gap_us < 100000, "loop never stalled across the outage (max gap %llu us)", (unsigned long long)max_gap_us);
+	}
+	bike_ws_close();
+}
+
+int main(int argc, char **argv)
+{
+	signal(SIGPIPE, SIG_IGN);
+	if (argc >= 2 && strcmp(argv[1], "fake") == 0)
+		run_fake();
+	else if (argc >= 4 && strcmp(argv[1], "blackhole") == 0)
+		run_blackhole(argv[2], (uint16_t)atoi(argv[3]));
+	else if (argc >= 3 && strcmp(argv[1], "refused") == 0)
+		run_refused((uint16_t)atoi(argv[2]));
+	else if (argc >= 4 && strcmp(argv[1], "live") == 0)
+		run_live(argv[2], (uint16_t)atoi(argv[3]), argc >= 5 ? argv[4] : NULL);
+	else
+	{
+		fprintf(stderr, "usage: %s fake | blackhole HOST PORT | refused PORT | live HOST PORT [SIGFILE]\n", argv[0]);
+		return 2;
+	}
+	printf("%s: %d checks, %d failed\n", argv[1], checks, failures);
+	return failures != 0;
+}
