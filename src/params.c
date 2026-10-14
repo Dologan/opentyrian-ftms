@@ -1046,7 +1046,7 @@ void JE_paramCheck(int argc, char *argv[])
 	for (int i = option.argn; i < argc; ++i)
 	{
 		for (uint j = 0; j < strlen(argv[i]); ++j)
-			argv[i][j] = toupper(argv[i][j]);
+			argv[i][j] = (char)toupper((unsigned char)argv[i][j]);
 		
 		for (uint j = 0; j < COUNTOF(pars); ++j)
 		{
