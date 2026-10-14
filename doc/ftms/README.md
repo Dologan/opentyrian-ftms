@@ -9,6 +9,7 @@ navigation pass. Start with the implementation plan for the status of each step.
 | [`design.md`](design.md) | Gate G1 design: settings, CLI options, the bike core, the Bike menu and the bridge contract. Where it differs from the plan, it wins. |
 | [`phase0-viability.md`](phase0-viability.md) | Phase 0 viability report (verdict: GO). |
 | [`controls-probe.md`](controls-probe.md) | The `--input-probe` diagnostic (T3b.0), which logs every SDL event the game receives. |
+| [`playtest-checklist.md`](playtest-checklist.md) | T5.2 hardware session (Surface + Q200B): setup, what to try, what to record, and the questions to answer. Uses `--ftms-log=FILE` for the per-second calibration CSV. |
 | [`remote-navigation-audit.md`](remote-navigation-audit.md) | T3b.4 audit: which screens work with arrow keys, Enter, Esc, left/right click and media keys only. |
 | [`phase0-spikes/`](phase0-spikes/) | Raw Phase 0 spike material: calibration analysis, Modern Tyrian and web routes, the route-A WebSocket client, and research notes on BLE and the sidecar. |
 

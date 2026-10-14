@@ -10,6 +10,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Superbomb balance (surge_superbomb): at most one grant per cooldown, and never above the cap.
+ * The cooldown default is the [ftms] key superbomb_cooldown (seconds, 0 = off). */
+#define BIKE_SUPERBOMB_CAP 5u
+#define BIKE_SUPERBOMB_COOLDOWN_S 60u
+
 #define BIKE_BLEND_DELAY_US 1500000u /* link down this long before the blend starts */
 
 void bike_rules_level_start(void); /* remainder accumulator = 0 */

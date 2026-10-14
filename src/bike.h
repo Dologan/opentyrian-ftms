@@ -27,6 +27,7 @@ typedef struct
 	bool air_mouse, pointer_smoothing, touch, remote_buttons;
 	uint16_t pointer_sens_pct; /* 25..400 */
 	uint16_t ftp_w; /* 50..500, default 200 */
+	uint16_t superbomb_cooldown_s; /* 0..600, default 60 (BIKE_SUPERBOMB_COOLDOWN_S) */
 	uint8_t floor; /* units per frame, default 8 */
 	uint16_t bias_pct, gain_pct, cap_pct; /* 50, 100 ("Strength"), 150 */
 	char bridge_host[64];
@@ -80,6 +81,9 @@ void bike_force_off(void);
 /* --regress-bike-*: regress pins (settings, feed implication, log file). */
 void bike_regress_pin(const char *set_list);
 void bike_log_open(const char *path);
+/* --ftms-test-level=E:L: local bridge integration check, not for players (tools/check_bike_bridge.sh). */
+bool bike_test_level_set(const char *spec);
+bool bike_test_level(int *episode, int *level);
 
 void bike_level_start(void);
 void bike_level_end(void);
@@ -116,6 +120,11 @@ uint32_t bike_tick_count(void);
 
 /* Refill bookkeeping for the per-tick log (--regress-bike-log). */
 bool bike_log_active(void);
-void bike_log_refill(unsigned add, unsigned power_after);
+void bike_log_refill(unsigned add, unsigned stock_add, unsigned power_after);
+
+/* --ftms-log=FILE: per-second calibration CSV while the gate is open (T5.2).  Inactive unless given. */
+void bike_calib_open(const char *path);
+/* Player shot accounting for that CSV: tiny hook in player_shot_create, no behaviour change. */
+void bike_note_shot(bool fired);
 
 #endif
