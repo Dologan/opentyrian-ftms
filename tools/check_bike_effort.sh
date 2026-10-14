@@ -3,6 +3,9 @@
 # effort engine (src/bike_effort.c) and feed reader (src/bike_feed.c) against golden
 # output from Flywheel's real TypeScript engine (test/bike/golden), plus a
 # determinism self-check against committed digests.  No SDL, no game data.
+# First it verifies that the vendored Flywheel files (feeds, goldens, protocol
+# tolerance fixtures, trace_to_feed.py) still match test/bike/VENDORED_FROM:
+# they are Flywheel's data, changed there and re-synced with tools/bike/vendor.py.
 # regress.sh runs it with the other structural checks.
 #   tools/check_bike_effort.sh            run the check
 #   tools/check_bike_effort.sh --update   rewrite test/bike/golden/c_digests.txt
@@ -12,6 +15,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CC="${CC:-cc}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/bike_effort_test.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT INT TERM
+
+if ! python3 -I "$ROOT/tools/bike/vendor.py" verify > "$WORK/vendor.log" 2>&1; then
+	cat "$WORK/vendor.log"
+	echo "FAIL bike-effort: vendored Flywheel files differ from test/bike/VENDORED_FROM"
+	exit 1
+fi
 
 ARG=""
 [ "${1:-}" = "--update" ] && ARG="--update-digests"
