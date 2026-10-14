@@ -238,12 +238,9 @@
     <ClInclude Include="..\src\bike.h" />
     <ClInclude Include="..\src\bike_effort.h" />
     <ClInclude Include="..\src\bike_feed.h" />
-<<<<<<< HEAD
     <ClInclude Include="..\src\bike_controls.h" />
-=======
     <ClInclude Include="..\src\bike_menu.h" />
     <ClInclude Include="..\src\bike_touch.h" />
->>>>>>> claude/focused-ritchie-ahh2sn
     <ClInclude Include="..\src\bike_rules.h" />
     <ClInclude Include="..\src\bike_ws.h" />
     <ClInclude Include="..\src\game_rules.h" />

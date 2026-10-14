@@ -268,6 +268,11 @@ if guard_selected check_no_t2000_data.sh && ! "$ROOT/tools/check_no_t2000_data.s
 	exit 1
 fi
 
+if guard_selected check_no_conflict_markers.sh && ! "$ROOT/tools/check_no_conflict_markers.sh"; then
+	echo "ERROR: merge-conflict markers in tracked files"
+	exit 1
+fi
+
 if guard_selected check_variant_bootstrap.sh && ! "$ROOT/tools/check_variant_bootstrap.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/variant-bootstrap"; then
 	echo "ERROR: variant/bootstrap checks failed"
 	exit 1
