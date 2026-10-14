@@ -8,12 +8,12 @@ Overall: with the master switch off, the core gate, the hash fold, config save, 
 
 ### 1. HIGH: committed merge-conflict markers in `visualc/opentyrian.vcxproj:241-246`
 ```
-<<<<<<< HEAD
+    <<<<<<< HEAD
     <ClInclude Include="..\src\bike_controls.h" />
-=======
+    =======
     <ClInclude Include="..\src\bike_menu.h" />
     <ClInclude Include="..\src\bike_touch.h" />
->>>>>>> claude/focused-ritchie-ahh2sn
+    >>>>>>> claude/focused-ritchie-ahh2sn
 ```
 - **Origin:** introduced by merge 652ee26 and still present at HEAD.
 - **Failure:** MSBuild/Visual Studio refuses to load the project (invalid XML), so the MSVC build is broken. CI does not catch this because Windows CI uses MSYS2 and the Makefile.
