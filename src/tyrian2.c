@@ -1211,7 +1211,7 @@ level_loop:
 			if (power > 900)
 				power = 900;
 			if (bike_log_active())
-				bike_log_refill(refill, power);
+				bike_log_refill(refill, powerAdd, power);
 
 			temp = power / 10;
 

@@ -17,11 +17,13 @@ static bq16 last_norm;
 static int32_t last_income;
 static unsigned last_add;
 static bool surging_now;
-static unsigned long superbombs_granted, shield_fast, sidekick_fast, special_extra;
+static uint64_t superbomb_cd_us; /* time until the next overdrive grant is allowed */
+static unsigned long superbombs_granted, superbombs_cooled, shield_fast, sidekick_fast, special_extra;
 
 void bike_rules_level_start(void)
 {
 	acc_q16 = 0;
+	superbomb_cd_us = 0;
 	last_income = 0;
 	last_add = 0;
 }
@@ -49,12 +51,20 @@ void bike_rules_frame(const BikeEffortSignals *sig, bool link_up, bool active, u
 	last_norm = sig->effort_norm;
 	surging_now = sig->surging && bike_gate_open() && bike_source() != BIKE_SOURCE_OFF;
 
-	/* +1 superbomb on overdrive-ready, as the pickup does (cap 10) */
+	/* +1 superbomb on overdrive-ready, as the pickup does, capped at BIKE_SUPERBOMB_CAP and rate
+	 * limited by a cooldown counted in gameplay time (dt), so it is frame-rate invariant. */
+	superbomb_cd_us = superbomb_cd_us > dt_us ? superbomb_cd_us - dt_us : 0;
 	if ((sig->events & BIKE_EV_OVERDRIVE) != 0 && bike_settings.surge_superbomb && bike_gate_open() &&
-	    bike_source() != BIKE_SOURCE_OFF && player[0].superbombs < 10)
+	    bike_source() != BIKE_SOURCE_OFF && player[0].superbombs < BIKE_SUPERBOMB_CAP)
 	{
-		++player[0].superbombs;
-		++superbombs_granted;
+		if (superbomb_cd_us > 0)
+			++superbombs_cooled;
+		else
+		{
+			++player[0].superbombs;
+			++superbombs_granted;
+			superbomb_cd_us = (uint64_t)bike_settings.superbomb_cooldown_s * 1000000u;
+		}
 	}
 	if (active && !was_active)
 	{
@@ -132,8 +142,9 @@ bool bike_rules_extra_special_tick(void)
 
 void bike_rules_log_coverage(void)
 {
-	logInfo("Bike effects: superbombs=%lu shield_fast=%lu sidekick_fast=%lu special_extra=%lu", superbombs_granted,
-	        shield_fast, sidekick_fast, special_extra);
+	logInfo("Bike effects: superbombs=%lu shield_fast=%lu sidekick_fast=%lu special_extra=%lu superbombs_cooled=%lu", superbombs_granted,
+	        shield_fast, sidekick_fast, special_extra,
+	        superbombs_cooled);
 }
 
 bq16 bike_rules_blend(void) { return blend_q16; }
@@ -154,5 +165,11 @@ uint64_t bike_rules_digest(void)
 		}
 	h ^= was_active ? 1u : 0u;
 	h *= 1099511628211ull;
+	if (superbomb_cd_us > 0) /* folded only while cooling, so digests without superbomb grants are unchanged */
+		for (b = 0; b < 8; ++b)
+		{
+			h ^= (superbomb_cd_us >> (8 * b)) & 0xFF;
+			h *= 1099511628211ull;
+		}
 	return h;
 }
