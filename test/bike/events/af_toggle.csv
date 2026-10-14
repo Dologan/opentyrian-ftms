@@ -1,0 +1,6 @@
+# auto-fire switched on and off during play, no menu trip
+# tick,action
+100,autofire_toggle
+500,autofire_toggle
+800,autofire_toggle
+1000,autofire_toggle

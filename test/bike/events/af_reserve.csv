@@ -1,0 +1,4 @@
+# auto-fire on from tick 5 with a drained shield, for the reserve cases
+0,immortal
+0,equip,shield=4
+5,autofire_on
