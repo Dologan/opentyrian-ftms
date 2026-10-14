@@ -1049,6 +1049,8 @@ void JE_initPlayerData(void)
 {
 	/* JE: New Game Items/Data */
 
+	bike_rules_new_game();
+
 	player[0].items.ship = 1;                     // USP Talon
 	player[0].items.weapon[FRONT_WEAPON].id = 1;  // Pulse Cannon
 	player[0].items.weapon[REAR_WEAPON].id = 0;   // None
@@ -1550,7 +1552,7 @@ JE_boolean JE_inGameSetup(void)
 	// "Bike and Controls" opens the bike menu over the frozen game.  It is offered
 	// once the bike master switch is on (or the menu was opened here before, so it
 	// stays reachable after switching the master off), and never in network games.
-	const bool bikeRow = !isNetworkGame && (bike_settings.master || bike_menu_in_level_latched());
+	const bool bikeRow = !isNetworkGame && (bike_master_on() || bike_menu_in_level_latched());
 
 	size_t visibleItems[COUNTOF(inGameText) + 1];
 	size_t menuItemsCount = 0;

@@ -988,13 +988,13 @@ void JE_paramCheck(int argc, char *argv[])
 			if (colon != NULL)
 			{
 				*colon = '\0';
-				if (!bike_settings_set("bridge_port", colon + 1))
+				if (!bike_override_set("bridge_port", colon + 1))
 				{
 					logError("%s: --ftms-bridge port must be 1-65535", argv[0]);
 					exit(EXIT_FAILURE);
 				}
 			}
-			if (!bike_settings_set("bridge_host", host))
+			if (!bike_override_set("bridge_host", host))
 			{
 				logError("%s: --ftms-bridge needs a host name (at most %d characters)", argv[0], (int)sizeof bike_settings.bridge_host - 1);
 				exit(EXIT_FAILURE);
@@ -1003,7 +1003,7 @@ void JE_paramCheck(int argc, char *argv[])
 		}
 
 		case 451: // --ftms-ftp=W
-			if (!bike_settings_set("ftp", option.arg))
+			if (!bike_override_set("ftp", option.arg))
 			{
 				logError("%s: --ftms-ftp must be 50-500 watts", argv[0]);
 				exit(EXIT_FAILURE);

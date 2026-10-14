@@ -136,11 +136,12 @@ bool bike_settings_set(const char *key, const char *value)
 	BOOL_KEY("surge_special", surge_special)
 	BOOL_KEY("surge_shield", surge_shield)
 	BOOL_KEY("air_mouse", air_mouse)
-	BOOL_KEY("pointer_smoothing", pointer_smoothing)
 	BOOL_KEY("touch", touch)
 	BOOL_KEY("remote_buttons", remote_buttons)
 #undef BOOL_KEY
 
+	if (strcmp(key, "pointer_smoothing") == 0)
+		return parse_bool(value, &b); /* retired key: accepted and ignored so old configs and scripts still load */
 	if (strcmp(key, "autofire") == 0)
 	{
 		if (strcmp(value, "toggle") == 0)
@@ -273,7 +274,7 @@ bool bike_settings_set_list(const char *list)
 static const char *const config_keys[] = {
 	"enabled", "generator", "hud", "surge_superbomb", "surge_sidekick", "surge_special", "surge_shield",
 	"autofire", "autofire_reserve", "autofire_key", "autofire_key2", "air_mouse", "pointer_sensitivity",
-	"pointer_smoothing", "touch", "remote_buttons", "ftp", "floor", "superbomb_cooldown", "bias", "strength", "cap",
+	"touch", "remote_buttons", "ftp", "floor", "superbomb_cooldown", "bias", "strength", "cap",
 	"bridge_host", "bridge_port"
 };
 
@@ -298,7 +299,6 @@ static void setting_text(const char *key, char *out, size_t cap)
 	else if (strcmp(key, "autofire_key2") == 0) str = SDL_GetScancodeName((SDL_Scancode)s->autofire_key2);
 	else if (strcmp(key, "air_mouse") == 0) str = onoff(s->air_mouse);
 	else if (strcmp(key, "pointer_sensitivity") == 0) num = s->pointer_sens_pct;
-	else if (strcmp(key, "pointer_smoothing") == 0) str = onoff(s->pointer_smoothing);
 	else if (strcmp(key, "touch") == 0) str = onoff(s->touch);
 	else if (strcmp(key, "remote_buttons") == 0) str = onoff(s->remote_buttons);
 	else if (strcmp(key, "ftp") == 0) num = s->ftp_w;
@@ -321,19 +321,61 @@ void bike_config_load(void)
 	const ConfigSection *section = config_find_section(&opentyrian_config, "ftms", NULL);
 	size_t i;
 
+	const char *value;
+
 	if (section == NULL)
 		return;
 	for (i = 0; i < sizeof config_keys / sizeof config_keys[0]; ++i)
 	{
-		const char *value;
-
 		/* a missing key or an invalid value keeps the default */
 		if (config_get_string_option(section, config_keys[i], &value) && !bike_settings_set(config_keys[i], value))
 			logWarn("opentyrian.cfg [ftms]: ignoring invalid %s = %s", config_keys[i], value);
 	}
+	/* Configs written before remote_buttons was its own switch: Air Mouse implied the menu buttons. */
+	if (bike_settings.air_mouse && !config_get_string_option(section, "remote_buttons", &value))
+		bike_settings.remote_buttons = true;
 }
 
+/* Run-scoped overrides (--ftms-bridge, --ftms-ftp, --ftms-test-level): each key's saved value is
+ * remembered the first time it is overridden, and bike_config_save() writes that value back, so a
+ * one-off command line never leaks into [ftms].  Menu edits of other keys persist as usual. */
+#define OVERRIDE_MAX 8
+static struct { const char *key; char saved[80]; } overrides[OVERRIDE_MAX];
+static unsigned override_count = 0;
+
+bool bike_override_set(const char *key, const char *value)
+{
+	unsigned i;
+	char before[80];
+
+	for (i = 0; i < override_count && strcmp(overrides[i].key, key) != 0; ++i)
+		;
+	setting_text(key, before, sizeof before);
+	if (!bike_settings_set(key, value))
+		return false;
+	if (i == override_count && i < OVERRIDE_MAX)
+	{
+		overrides[i].key = key; /* callers pass string literals */
+		strcpy(overrides[i].saved, before);
+		override_count = i + 1;
+	}
+	return true;
+}
+
+static void config_save_values(void);
+
 void bike_config_save(void)
+{
+	BikeSettings current = bike_settings;
+	unsigned i;
+
+	for (i = 0; i < override_count; ++i)
+		bike_settings_set(overrides[i].key, overrides[i].saved);
+	config_save_values();
+	bike_settings = current;
+}
+
+static void config_save_values(void)
 {
 	ConfigSection *section;
 	BikeSettings def;
@@ -416,8 +458,8 @@ bool bike_test_level_set(const char *spec)
 		return false;
 	test_episode = (int)e;
 	test_level = (int)l;
-	bike_settings.master = true;
-	bike_settings.generator = true;
+	bike_override_set("enabled", "on");
+	bike_override_set("generator", "on");
 	return true;
 }
 
@@ -440,7 +482,7 @@ void bike_init(void)
 
 void bike_shutdown(void)
 {
-	bike_ws_close();
+	bike_ws_shutdown();
 	if (bike_hash_active())
 	{
 		bike_rules_log_coverage();
@@ -516,9 +558,11 @@ void bike_level_end(void)
 
 /* ---- gate ---------------------------------------------------------------- */
 
+bool bike_master_on(void) { return bike_settings.master && !forced_off; }
+
 bool bike_gate_open(void)
 {
-	return bike_settings.master && !forced_off && level_active && !twoPlayerMode && !onePlayerAction &&
+	return bike_master_on() && level_active && !twoPlayerMode && !onePlayerAction &&
 	       !isNetworkGame && !playDemo && !recordDemo && !galagaMode && !constantPlay;
 }
 
@@ -560,6 +604,10 @@ static void calib_row(void)
 		calib_next_us = clock_us + 1000000u;
 }
 
+/* Sample age saturates instead of wrapping (a 32-bit microsecond count wraps after ~71.6 minutes,
+ * which would make a silent link look fresh again). */
+static uint32_t age_sat(uint64_t d) { return d > UINT32_MAX ? UINT32_MAX : (uint32_t)d; }
+
 void bike_frame_tick(void)
 {
 	BikeEffortInput in;
@@ -596,7 +644,7 @@ void bike_frame_tick(void)
 		seq = feed_state.seq;
 		if (has_sample && (!have_sample || seq != last_seq))
 			arrival_us = clock_us;
-		age_us = has_sample ? (uint32_t)(clock_us - arrival_us) : 0;
+		age_us = has_sample ? age_sat(clock_us - arrival_us) : 0;
 	}
 	else if (source == BIKE_SOURCE_BRIDGE)
 	{
@@ -611,7 +659,7 @@ void bike_frame_tick(void)
 			cad = mailbox.latest.cadence_rpm;
 			seq = mailbox.latest.seq;
 			arrival_us = mailbox.latest.arrival_us;
-			age_us = now > arrival_us ? (uint32_t)(now - arrival_us) : 0;
+			age_us = now > arrival_us ? age_sat(now - arrival_us) : 0;
 		}
 		link_up = connected && (mailbox.link == BIKE_LINK_STREAMING || (has_sample && age_us < 3000000u));
 	}
@@ -726,7 +774,7 @@ unsigned bike_link_color(BikeLink link, bool lost)
 
 bool bike_hud_visible(void)
 {
-	return bike_settings.master && bike_settings.hud && !forced_off && hud.gate;
+	return bike_master_on() && bike_settings.hud && hud.gate;
 }
 
 /* HUD accessor: returns whether auto-fire is on; `held` is set when the reserve is holding it back. */

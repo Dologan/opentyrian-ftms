@@ -43,6 +43,7 @@ typedef enum
 	ROW_AUTOFIRE,
 	ROW_RESERVE,
 	ROW_AIRMOUSE,
+	ROW_REMOTE,
 	ROW_SENS,
 	ROW_TOUCH,
 	ROW_HUD,
@@ -71,6 +72,7 @@ static const RowInfo rows[ROW_COUNT] = {
 	[ROW_AUTOFIRE]  = { "Auto-fire:", "Toggle: a key switches auto-fire in play." },
 	[ROW_RESERVE]   = { "Auto-fire Reserve:", "Hold auto-fire back below this power." },
 	[ROW_AIRMOUSE]  = { "Air Mouse:", "Steer the ship with a pointer remote." },
+	[ROW_REMOTE]    = { "Remote Buttons:", "Pointer OK and Back act as Enter and Esc." },
 	[ROW_SENS]      = { "Pointer Speed:", "Pointer sensitivity for the air mouse." },
 	[ROW_TOUCH]     = { "Touch Controls:", "Drag to steer, tap zones to fire." },
 	[ROW_HUD]       = { "Bike HUD:", "Show watts, cadence and link in play." },
@@ -121,6 +123,7 @@ static bool *bool_field(RowId id)
 		case ROW_SHIELD: return &s->surge_shield;
 		case ROW_AUTOFIRE: return &s->autofire;
 		case ROW_AIRMOUSE: return &s->air_mouse;
+		case ROW_REMOTE: return &s->remote_buttons;
 		case ROW_TOUCH: return &s->touch;
 		case ROW_HUD: return &s->hud;
 		default: return NULL;

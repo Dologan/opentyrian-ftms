@@ -42,8 +42,11 @@ bool bike_ws_open(const char *host, uint16_t port);
  * mb->has_sample.  An old sample is kept across link loss (it ages out). */
 void bike_ws_poll(BikeMailbox *mb, uint64_t now_us);
 
-/* Sends a close frame (best effort), tears the link down, stops reconnecting. */
+/* Sends a close frame (best effort), tears the link down, stops reconnecting.  Never blocks:
+ * SDL3_net stays initialised and a pending name lookup is abandoned. */
 void bike_ws_close(void);
+/* bike_ws_close() plus the final NET_Quit (may wait for resolver threads); program exit only. */
+void bike_ws_shutdown(void);
 
 /* Sends one masked text frame, e.g. {"type":"sim","cadenceRpm":90}.  False if
  * the link is not open. */

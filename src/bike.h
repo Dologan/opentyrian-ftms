@@ -24,7 +24,7 @@ typedef struct
 	bool autofire;
 	uint8_t autofire_reserve_pct; /* 0|25|50 */
 	int autofire_key, autofire_key2; /* SDL_Scancode values */
-	bool air_mouse, pointer_smoothing, touch, remote_buttons;
+	bool air_mouse, touch, remote_buttons; /* air_mouse: pointer steering in play; remote_buttons: menu OK/Back */
 	uint16_t pointer_sens_pct; /* 25..400 */
 	uint16_t ftp_w; /* 50..500, default 200 */
 	uint16_t superbomb_cooldown_s; /* 0..600, default 60 (BIKE_SUPERBOMB_COOLDOWN_S) */
@@ -67,6 +67,10 @@ bool bike_settings_set(const char *key, const char *value);
 /* "K=V,K=V,..." through bike_settings_set; logs the offending pair on failure. */
 bool bike_settings_set_list(const char *list);
 
+/* Like bike_settings_set, for command-line overrides: applies for this run only; bike_config_save()
+ * writes the pre-override value back to [ftms]. */
+bool bike_override_set(const char *key, const char *value);
+
 void bike_config_load(void); /* [ftms] section of opentyrian_config */
 void bike_config_save(void);
 
@@ -89,6 +93,8 @@ void bike_level_start(void);
 void bike_level_end(void);
 void bike_frame_tick(void); /* exactly once per level-loop pass */
 
+/* The master switch as seen by everything outside the level gate: setting on and --ftms-off not given. */
+bool bike_master_on(void);
 bool bike_gate_open(void);
 bool bike_generator_on(void); /* gate && generator && source != OFF && a sample has arrived */
 BikeSource bike_source(void);
@@ -110,8 +116,7 @@ bool bike_hud_visible(void);
 /* Palette index for the link dot: green streaming, yellow connected, orange
  * connecting, red link lost (had data), grey off. */
 unsigned bike_link_color(BikeLink link, bool lost);
-/* Auto-fire state for the HUD (AUTO / HOLD).  STUB until T3b.1 lands: always false.
- * The auto-fire implementation replaces the body in bike.c (or bike_controls.c). */
+/* Auto-fire state for the HUD (AUTO / HOLD). */
 bool bike_autofire_state(bool *held);
 
 bool bike_hash_active(void);
