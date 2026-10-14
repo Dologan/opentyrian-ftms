@@ -990,7 +990,7 @@ void setupMenu(void)
 
 							// Act on picker item.
 							if (mouseInput.button == SDL_BUTTON_LEFT &&
-							    mouseInput.x >= xMenuItemValue && mouseInput.y < xMenuItemValue + wMenuItemName &&
+							    mouseInput.x >= xMenuItemValue && mouseInput.x < xMenuItemValue + wMenuItemValue &&
 							    mouseInput.y >= yPickerItem && mouseInput.y < yPickerItem + hPickerItem)
 							{
 								action = true;
