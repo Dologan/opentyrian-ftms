@@ -22,10 +22,16 @@ static unsigned long superbombs_granted, superbombs_cooled, shield_fast, sidekic
 
 void bike_rules_level_start(void)
 {
+	/* superbomb_cd_us is deliberately kept: the cooldown counts gameplay time across levels (a short
+	 * level or a retry must not allow a grant more often than once per cooldown); new game resets it. */
 	acc_q16 = 0;
-	superbomb_cd_us = 0;
 	last_income = 0;
 	last_add = 0;
+}
+
+void bike_rules_new_game(void)
+{
+	superbomb_cd_us = 0;
 }
 
 int32_t bike_income_q16(unsigned G, bq16 effort_norm, uint8_t floor, uint16_t bias_pct,

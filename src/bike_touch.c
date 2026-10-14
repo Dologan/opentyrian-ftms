@@ -77,7 +77,7 @@ static unsigned long steered_px, zone_taps, two_finger_taps, menu_opens, pauses,
 
 bool bike_touch_on(void)
 {
-	return bike_settings.master && bike_settings.touch;
+	return bike_master_on() && bike_settings.touch;
 }
 
 bool bike_touch_play(void)

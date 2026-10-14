@@ -17,6 +17,7 @@
 
 #define BIKE_BLEND_DELAY_US 1500000u /* link down this long before the blend starts */
 
+void bike_rules_new_game(void); /* superbomb cooldown = 0 (JE_initPlayerData) */
 void bike_rules_level_start(void); /* remainder accumulator = 0 */
 /* Once per frame tick, after the effort step.  `active` is whether the generator
  * is driving the refill (a closed->open edge restarts the blend at stock). */

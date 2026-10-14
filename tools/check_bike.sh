@@ -77,6 +77,23 @@ cmp -s "$OUT/off.f" "$OUT/c150.f" && fail observable "const 150 W frames equal t
 echo "PASS bike-const150: deterministic, differs from stock"
 LABELS+=(c150)
 
+# --- command-line overrides never reach the saved config (T5.1) -------------------
+# --ftms-bridge / --ftms-ftp are run-scoped.  A real config save (--regress-user-files writes the
+# configs through the real serializers) must keep the saved values for those keys, keep unrelated
+# saved keys, tolerate the retired pointer_smoothing key (config files keep unknown items), and turn an old Air Mouse config into
+# remote_buttons = on (Air Mouse used to imply the menu buttons).
+CFGDIR="$OUT/cfg-overrides"
+rm -rf "$CFGDIR"; mkdir -p "$CFGDIR"
+printf "section 'ftms'\n\titem 'enabled' 'on'\n\titem 'ftp' '250'\n\titem 'bridge_host' 'saved.example'\n\titem 'bridge_port' '9001'\n\titem 'pointer_smoothing' 'on'\n\titem 'air_mouse' 'on'\n" >"$CFGDIR/opentyrian.cfg"
+SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-user-root="$CFGDIR" --regress-user-files \
+	--ftms-bridge=override.example:1234 --ftms-ftp=333 >"$OUT/cfg-overrides.log" 2>&1 || fail config-override "the save run failed"
+cfgval() { sed -n "s/^[[:space:]]*item '$1' '\(.*\)'\$/\1/p" "$CFGDIR/opentyrian.cfg" | head -n 1; }
+[ "$(cfgval ftp)" = 250 ] && [ "$(cfgval bridge_host)" = saved.example ] && [ "$(cfgval bridge_port)" = 9001 ] \
+	|| fail config-override "a command-line override leaked into [ftms] (ftp=$(cfgval ftp) host=$(cfgval bridge_host) port=$(cfgval bridge_port))"
+[ "$(cfgval enabled)" = on ] && [ "$(cfgval air_mouse)" = on ] || fail config-override "unrelated saved keys changed"
+[ "$(cfgval remote_buttons)" = on ] || fail config-override "an old Air Mouse config did not enable remote_buttons"
+echo "PASS bike-config-override: --ftms-bridge / --ftms-ftp are run-scoped, retired key tolerated, Air Mouse config migrated"
+
 if [ "$MODE" = "--quick" ]; then
 	echo "PASS bike (quick)"
 	exit 0

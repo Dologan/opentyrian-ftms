@@ -28,6 +28,7 @@
 #include "player.h"
 #include "varz.h"
 #include "config.h"
+#include "opentyr.h"
 
 #include <SDL3/SDL.h>
 
@@ -68,12 +69,12 @@ static size_t event_count = 0, event_next = 0;
 
 bool bike_controls_remote(void)
 {
-	return bike_settings.master && bike_settings.air_mouse;
+	return bike_master_on() && bike_settings.remote_buttons;
 }
 
 bool bike_controls_air_play(void)
 {
-	return bike_controls_remote() && bike_gate_open();
+	return bike_master_on() && bike_settings.air_mouse && bike_gate_open();
 }
 
 int bike_controls_remote_button_key(int sdl_button)
@@ -188,8 +189,17 @@ static bool toggle_input_down(void)
 	int i, j;
 
 	for (i = 0; i < 2; ++i)
-		if (keys[i] > 0 && keys[i] < SDL_SCANCODE_COUNT && keysactive[keys[i]])
+	{
+		bool bound = false;
+
+		/* A toggle key that is also bound to a game action (WASD players bind A to move left)
+		 * is skipped, so steering never flips auto-fire.  Re-checked live: rebinding takes effect at once. */
+		for (j = 0; j < (int)COUNTOF(keySettings); ++j)
+			if ((int)keySettings[j] == keys[i])
+				bound = true;
+		if (!bound && keys[i] > 0 && keys[i] < SDL_SCANCODE_COUNT && keysactive[keys[i]])
 			down = true;
+	}
 	for (j = 0; j < joysticks; ++j)
 		if (joystick[j].gamepad != NULL)
 			for (i = 0; i < (int)(sizeof pad_toggle_buttons / sizeof pad_toggle_buttons[0]); ++i)

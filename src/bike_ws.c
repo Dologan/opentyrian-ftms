@@ -865,8 +865,16 @@ void bike_ws_close(void)
 		static const uint8_t normal[2] = { 0x03, 0xe8 }; /* 1000 */
 		send_frame(0x8, normal, 2);
 	}
+	/* SDL3_net stays initialised: its last NET_Quit joins the resolver threads, which can block
+	 * for as long as a stuck getaddrinfo takes.  An unfinished lookup is only abandoned here
+	 * (the resolver thread keeps its own address reference). */
 	release_net();
 	set_state(BIKE_WS_IDLE, 0);
+}
+
+void bike_ws_shutdown(void)
+{
+	bike_ws_close();
 	if (net_inited)
 	{
 		NET_Quit(); /* reference counted: netplay's own NET_Init is unaffected */
@@ -890,6 +898,10 @@ void bike_ws_poll(BikeMailbox *mb, uint64_t now_us)
 }
 
 void bike_ws_close(void)
+{
+}
+
+void bike_ws_shutdown(void)
 {
 }
 

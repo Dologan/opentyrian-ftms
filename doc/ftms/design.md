@@ -61,7 +61,7 @@ typedef struct { bool master, generator, hud;
   bool surge_superbomb, surge_sidekick, surge_special, surge_shield;
   bool autofire; uint8_t autofire_reserve_pct;            /* 0|25|50 */
   int  autofire_key, autofire_key2;                       /* SDL_Scancode values */
-  bool air_mouse, pointer_smoothing, touch, remote_buttons; uint16_t pointer_sens_pct; /* 25..400 */
+  bool air_mouse, touch, remote_buttons; /* air_mouse = pointer steering in play; remote_buttons = menu OK/Back as Enter/Esc */ uint16_t pointer_sens_pct; /* 25..400 */
   uint16_t ftp_w;                                         /* 50..500 step 5, default 200 */
   uint8_t floor;                                          /* units/frame, default 8 */
   uint16_t bias_pct, gain_pct, cap_pct;                   /* 50, 100 ("Strength"), 150 */
@@ -139,7 +139,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `enabled` (master), `generator`, `hud`
   - `surge_superbomb`, `surge_sidekick`, `surge_special`, `surge_shield`
   - `autofire` (`off`|`toggle`), `autofire_reserve` (0|25|50), `autofire_key`, `autofire_key2` (SDL scancode names; defaults `A` and `Application`, i.e. the remote's Menu key, pending the T3b.0 probe)
-  - `air_mouse`, `pointer_sensitivity`, `pointer_smoothing`, `touch`, `remote_buttons`
+  - `air_mouse`, `pointer_sensitivity`, `touch`, `remote_buttons` (independent: menu translation no longer needs Air Mouse; `pointer_smoothing` was never implemented and is retired: old configs still load, a config with Air Mouse on and no `remote_buttons` key loads with Remote Buttons on)
   - `ftp`, `floor`, `bias`, `strength` (gain), `cap`
   - `superbomb_cooldown` (seconds, 0-600, default 60; 0 lifts the rate limit; not in the menu)
   - `bridge_host`, `bridge_port`
@@ -182,7 +182,7 @@ bike_gate_open() = master && level_active && !twoPlayerMode && !onePlayerAction 
 | Pointer | `mainint.c:3735` (`mouseXC += mouseXR`) | `bike_controls_pointer(&mouseXC, &mouseYC)` when `air_mouse`. The ±30 clamp at `3788-3795` is kept. |
 | Sidekick surge | `mainint.c:4731` | `charge_ticks = bike_rules_sidekick_charge_ticks(20);` |
 | Special surge | `varz.c:633`, after `specialWait--` | `if (bike_rules_extra_special_tick() && specialWait > 0) specialWait--;` |
-| Superbomb | inside `bike_rules_frame` | On `BIKE_EV_OVERDRIVE`: `++player[0].superbombs` like the pickup at `mainint.c:5091`, but capped at `BIKE_SUPERBOMB_CAP` (5, not the pickup's 10) and at most once per `superbomb_cooldown` (default 60 s of gameplay time, counted from `dt`, so frame-rate invariant). Measured: a Q200B ride fires ~15 overdrive events in 90 s, so uncapped it was too generous |
+| Superbomb | inside `bike_rules_frame` | On `BIKE_EV_OVERDRIVE`: `++player[0].superbombs` like the pickup at `mainint.c:5091`, but capped at `BIKE_SUPERBOMB_CAP` (5, not the pickup's 10) and at most once per `superbomb_cooldown` (default 60 s of gameplay time, counted from `dt`, so frame-rate invariant; the cooldown carries across levels and retries of a session and resets only on a new game, `JE_initPlayerData`). Measured: a Q200B ride fires ~15 overdrive events in 90 s, so uncapped it was too generous |
 | Transport | `keyboard.c:189` `handleSdlEvents()` | `bike_service()` |
 | HUD | `modern_hud.c:875` status panel; generator row `662` | Reads `bike_hud()` only. It never writes, never calls `mt_rand`, and never touches `bike_settings`. |
 

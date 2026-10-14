@@ -382,8 +382,9 @@ void handleSdlEvents(void)
 
 				// Remote mode: pointer drift must not move menu focus or show the
 				// pointer; the relative motion above still steers the ship.
-				if ((ev.motion.xrel != 0 || ev.motion.yrel != 0) &&
-				    (!bike_controls_remote() || bike_touch_is_touch_mouse(ev.motion.which)))
+				// Outside remote mode this is the stock rule: every motion event counts.
+				if (!bike_controls_remote() ||
+				    ((ev.motion.xrel != 0 || ev.motion.yrel != 0) && bike_touch_is_touch_mouse(ev.motion.which)))
 				{
 					mouseHasMotionInput = true;
 

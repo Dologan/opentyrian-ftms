@@ -13,6 +13,19 @@ Convenções:
 
 ## 2026-10-14
 
+### Bike (FTMS): correções da revisão de código (T5.1)
+- **Revisão:** achados e resolução em `doc/ftms/review-t51.md`.
+- **vcxproj:** marcadores de merge (`<<<<<<<`) em `visualc/opentyrian.vcxproj` quebravam o projeto do Visual Studio (o CI do Windows usa MSYS2 e não pegava). Corrigido; novo guard `tools/check_no_conflict_markers.sh` (no `make regress` e no quick).
+- **Overrides só de execução:** `--ftms-bridge`, `--ftms-ftp` e `--ftms-test-level` não são mais gravados em `[ftms]` (`bike_override_set` guarda o valor salvo e `bike_config_save` o regrava). Caso novo `bike-config-override` em `check_bike.sh`.
+- **`--ftms-off`** agora desliga também a tradução de botões, o toque e a linha do menu do jogo (`bike_master_on()`).
+- **Botões do controle remoto** têm chave e linha de menu próprias (`remote_buttons`, "Remote Buttons"), independentes do Air Mouse; `pointer_smoothing` (sem efeito) foi removida, configs antigas carregam.
+- **Reconexão da ponte:** o SDL3_net fica inicializado durante a vida do cliente (`bike_ws_shutdown` só na saída); trocar o endereço ou desligar o mestre abandona a resolução pendente e não espera mais o `getaddrinfo`.
+- **Idade da amostra** satura em 32 bits (dava a volta em ~71,6 min e fazia uma amostra velha parecer fresca).
+- **Cooldown do superbomb** persiste entre fases (e tentativas) e zera só em jogo novo; o digest `sgride` mudou por isso (a corrida reinicia a fase), único digest novo.
+- **Mouse stock:** movimento do mouse com delta zero volta a contar como no stock quando o modo remoto está desligado.
+- **Auto-fire:** a tecla de alternar (padrão A) é ignorada se estiver ligada a uma ação em `keySettings`.
+- Não feitos: o `--regress-bike-feed/events` fora do regress e a exclusão de toque no lançador (ver a revisão).
+
 ### Bike (FTMS): controles por toque (T3b.3)
 - **Arrastar para dirigir:** o dedo no campo de jogo move a nave pelo seu deslocamento, somado ao caminho `mouseXC/YC` (clamp de ±30 e inércia stock mantidos), com a mesma `pointer_sensitivity` do mouse aéreo. O mouse sintetizado pelo SDL3 a partir do dedo é descartado em jogo (sem contagem dupla nem tiro por clique) e mantido fora dele, então os toques em menus continuam sendo cliques; o toque não passa pela tradução OK/Voltar do mouse aéreo.
 - **Zonas nos painéis laterais:** esquerda REAR, SK-L, SK-R; direita BOMB, AUTO, MENU, PAUSE; dois dedos rápidos abrem o menu do jogo. O Modern desenha as zonas (só apresentação); no Classic e no 4:3 as zonas são a margem e a barra do quadro de 320. Auto-fire é o companheiro esperado: com Touch ligado e Auto-fire Off, o menu avisa e o rótulo AUTO fica apagado.
