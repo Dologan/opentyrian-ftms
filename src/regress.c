@@ -619,7 +619,9 @@ int regress_take_menu_request(void)
 
 	// Open on the run's last presented frame.  The in-level menus loop forever
 	// on input, so the frame cap ends the run on this first menu frame.
-	if (regress_frame + 1 < (unsigned long)regress_frames)
+	// The bike menu needs frames to walk its key script, so it opens earlier.
+	const unsigned long lead = regress_menu_kind == REGRESS_MENU_BIKE ? 40 : 0;
+	if (regress_frame + 1 + lead < (unsigned long)regress_frames)
 		return REGRESS_MENU_NONE;
 
 	regress_menu_taken = true;
