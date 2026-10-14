@@ -22,7 +22,10 @@ real bike, and how the controls behave on the Surface. Plan for 45 to 60 minutes
    Use a new file name for each run, because the log is overwritten.
 5. In the game open Setup > Bike and Controls: Enabled on, Generator on, HUD on. Check
    the link dot reaches green (Streaming) while you pedal.
-6. Set your FTP (start with 200 W, or 75 percent of your best 20 minute average if you know it).
+6. Set your FTP. Best: run `flywheel-bridge calibrate` in the Flywheel checkout (a warm-up, the hardest
+   even 8 minutes you can hold, a cool-down; FTP is 90 percent of that average, in this bike's own
+   watts). Setup > Bike and Controls then shows it beside FTP (FTP Source: Bridge) from the next level.
+   Otherwise type one under FTP Source: Manual (start with 200 W).
 7. Play Tyrian level 1 (or any level you know well). Use a weapon you like, and note the
    generator you start with.
 

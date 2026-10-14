@@ -11,9 +11,9 @@ User decisions (2026-10-14):
 4. Platforms are **Windows and Linux**. No macOS work.
 5. The generator uses **mapping C**: `units/frame = max(F, G × (0.5 + effortNorm(W̄/FTP)))`.
    - It will need calibration later, so its constants must be tunable.
-   - **FTP is entered manually in an in-game menu.**
+   - **FTP is entered manually in an in-game menu.** *(Extended: FTP can now come from the Flywheel bridge's rider, measured by its calibration test; the typed value remains, see design.md 3a.)*
    - **Surge options are user-configurable in the menu.**
-6. **Flywheel becomes GPL** so its code can be ported.
+6. **Flywheel becomes GPL** so its code can be ported. *(Superseded: Flywheel is MIT licensed, which is compatible with this GPL fork.)*
 7. Start/Resume (0x07) is not a concern. The bridge already does the FTMS handshake.
 8. The Tyrian 2.1 data stays **bundled**, as modern-tyrian already does.
 
