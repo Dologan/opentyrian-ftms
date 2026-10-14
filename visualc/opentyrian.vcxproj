@@ -281,6 +281,7 @@
     <ClInclude Include="..\src\sndmast.h" />
     <ClInclude Include="..\src\sprite.h" />
     <ClInclude Include="..\src\starlib.h" />
+    <ClInclude Include="..\src\swar.h" />
     <ClInclude Include="..\src\tyrian2.h" />
     <ClInclude Include="..\src\varz.h" />
     <ClInclude Include="..\src\vfx.h" />

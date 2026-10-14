@@ -489,6 +489,9 @@
     <ClInclude Include="..\src\starlib.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\swar.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\tyrian2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
