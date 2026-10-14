@@ -588,7 +588,7 @@ void JE_loadCompShapes(Sprite2_array *sprite2s, char s)
 	free_sprite2s(sprite2s);
 
 	char filename[11];
-	snprintf(filename, sizeof filename, "newsh%c.shp", tolower(s));
+	snprintf(filename, sizeof filename, "newsh%c.shp", tolower((unsigned char)s));
 	
 	File file = dataFileOpen(filename, "rb");
 	if (file.error)

@@ -3201,7 +3201,7 @@ new_game:
 
 	/* Read Shapes.DAT */
 	char shapesFilename[13];
-	snprintf(shapesFilename, sizeof shapesFilename, "shapes%c.dat", tolower(char_shapeFile));
+	snprintf(shapesFilename, sizeof shapesFilename, "shapes%c.dat", tolower((unsigned char)char_shapeFile));
 
 	File shapesFile = dataFileOpen(shapesFilename, "rb");
 	if (shapesFile.error)
@@ -3634,12 +3634,16 @@ bool titleScreen(void)
 				break;
 			}
 
-			SDL_Keycode sym = toupper(keyboardInput.sym);
+			SDL_Keycode sym = keyboardInput.sym;
+			// Convert key code (which is Unicode where possible) to uppercase ASCII.
+			char ch = sym < 0x80
+				? (char)toupper((int)sym)
+				: '\0';
 
 			for (size_t i = 0; i < arcade->engage_code; i++)
 			{
 				if (specialNameProgress[i] >= COUNTOF(specialName[i]) - 1 ||
-				    sym != (SDL_Keycode)(unsigned char)specialName[i][specialNameProgress[i]])
+				    ch != specialName[i][specialNameProgress[i]])
 				{
 					specialNameProgress[i] = 0;
 					continue;
