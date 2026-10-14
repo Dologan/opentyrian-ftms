@@ -113,3 +113,34 @@ Copy this table into the result note. Write `none` when nothing was logged.
 
 Add the Windows build and the Surface model at the top of the note, and say
 whether the remote was paired by Bluetooth or USB receiver.
+
+## Verifying the touch controls on the Surface (T3b.3)
+
+After the probe, check the game itself. Turn on Setup > Bike and Controls >
+Bike and Controls, then **Touch Controls**, and set **Auto-fire** to Toggle
+(touch has no fire zone; the menu help line warns when Auto-fire is Off). Use a
+Modern widescreen layout for the labelled side panels. Start a level and check:
+
+1. **Drag to steer.** Put one finger anywhere on the playfield and drag. The
+   ship should follow the movement and stop when the finger stops. Note whether
+   it feels too slow or too fast at 100% and what **Pointer Speed** works best,
+   and whether the ship keeps drifting after you lift the finger.
+2. **No double input.** While dragging, the ship must not fire or open anything
+   by itself (the synthesized mouse click is dropped in play).
+3. **Zones.** Dotted lines and labels show on the side panels. Tap or hold each:
+   REAR (rear fire mode), SK-L and SK-R (sidekicks, held while touched), BOMB
+   (superbomb), AUTO (toggle auto-fire; the label brightens when it is on),
+   MENU (in-game menu), PAUSE. Say whether the bands are easy to hit with a
+   thumb and whether a label sits where you expect it.
+4. **Two-finger tap.** Tap with two fingers at once on the playfield: the
+   in-game menu opens. A slow press with two fingers, or a pinch or two-finger
+   drag, must not.
+5. **Menus.** In the in-game menu, the pause screen and the setup menus a tap
+   must still act as a click on the row under the finger, also with Air Mouse on.
+6. **Classic and 4:3.** The zones are the narrow strips at the screen edges and
+   nothing is drawn. Note whether they are usable.
+7. **Everything off.** With Touch Controls off (or the master switch off) a
+   finger only produces SDL's own clicks, as before.
+
+Report the Windows build, the Surface model and whether taps that start on the
+playfield but end on a panel (or the reverse) behave sensibly.
