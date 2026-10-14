@@ -1369,9 +1369,8 @@ int main(int argc, char *argv[])
 	{
 		logInfo("Initializing SDL audio...");
 
-		init_audio();
-
-		loadSndFile(xmas);
+		if (init_audio())
+			loadSndFile(xmas);
 	}
 	else
 	{
