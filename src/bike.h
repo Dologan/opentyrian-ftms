@@ -90,6 +90,26 @@ bool bike_generator_on(void); /* gate && generator && source != OFF && a sample 
 BikeSource bike_source(void);
 const BikeHud *bike_hud(void);
 
+/* Menus and HUD (presentation only, read-only). */
+typedef struct
+{
+	BikeLink link;
+	bool has_sample, power_valid, cadence_valid;
+	unsigned watts, rpm; /* last values, rounded */
+	uint32_t age_ms;     /* since the last sample arrived (0 without one) */
+} BikeStatus;
+void bike_status(BikeStatus *out);
+const char *bike_link_name(BikeLink link); /* "Off", "Connecting", "Connected", "Streaming" */
+/* The HUD readout is drawn only while the master switch and the HUD setting are on
+ * and the gate was open at the last frame tick.  Reads settings live. */
+bool bike_hud_visible(void);
+/* Palette index for the link dot: green streaming, yellow connected, orange
+ * connecting, red link lost (had data), grey off. */
+unsigned bike_link_color(BikeLink link, bool lost);
+/* Auto-fire state for the HUD (AUTO / HOLD).  STUB until T3b.1 lands: always false.
+ * The auto-fire implementation replaces the body in bike.c (or bike_controls.c). */
+bool bike_autofire_state(bool *held);
+
 bool bike_hash_active(void);
 uint64_t bike_state_digest(void);
 uint32_t bike_tick_count(void);

@@ -142,6 +142,7 @@
     <ClCompile Include="..\src\bike_controls.c" />
     <ClCompile Include="..\src\bike_effort.c" />
     <ClCompile Include="..\src\bike_feed.c" />
+    <ClCompile Include="..\src\bike_menu.c" />
     <ClCompile Include="..\src\bike_rules.c" />
     <ClCompile Include="..\src\bike_ws.c" />
     <ClCompile Include="..\src\game_rules.c" />
@@ -236,7 +237,11 @@
     <ClInclude Include="..\src\bike.h" />
     <ClInclude Include="..\src\bike_effort.h" />
     <ClInclude Include="..\src\bike_feed.h" />
+<<<<<<< HEAD
     <ClInclude Include="..\src\bike_controls.h" />
+=======
+    <ClInclude Include="..\src\bike_menu.h" />
+>>>>>>> claude/focused-ritchie-ahh2sn
     <ClInclude Include="..\src\bike_rules.h" />
     <ClInclude Include="..\src\bike_ws.h" />
     <ClInclude Include="..\src\game_rules.h" />

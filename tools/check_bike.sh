@@ -19,6 +19,9 @@
 #     "Bike autofire:", "Bike end state:") prove each path really ran.
 #   - the older cases pin surge_superbomb=0 (its default is on), so their digests are the ones
 #     committed before the surge effects existed.
+#   - UI: the Bike and Controls setup screens, the in-game bike overlay and the HUD
+#     (Classic, Modern 16:9, a surge ride) are snapshotted and hashed; the HUD on/off
+#     state hashes must be identical.
 #   --quick runs the flag-off, all-off and constant-150 W determinism subset only.
 # Only counts and hashes are read from the logs.
 set -uo pipefail
@@ -180,14 +183,59 @@ for r in 0 50; do case_run "mf$r" 1500 "$AF" --regress-bike-events="$EVD/fire_ma
 for x in f s blog; do cmp -s "$OUT/mf0.$x" "$OUT/mf50.$x" || fail manual-fire "the reserve changed manual fire ($x)"; done
 [ "$(col_min mf50 9 300)" -lt 225 ] || fail manual-fire "manual fire did not drain below the 25% line"
 echo "PASS bike-manual-fire: the reserve never holds back manual fire"
+# --- UI snapshots: setup menu screens and the HUD -------------------------------
+# The BMPs are hashed into test/bike/regress.txt (snap-*); --update also renders them
+# as PNGs under doc/ftms/screens when python3 with PIL is available.
+SNAPS=()
+snap_screen() { # label screen
+	local l=$1 s=$2
+	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-screen="$s" \
+		--regress-bike-set=enabled=1,surge_special=1 --regress-frames=40 --regress-snapshot=30:"$OUT/$l.bmp" \
+		>"$OUT/$l.log" 2>&1 || fail "$l" "the screen run exited with $?"
+	[ -s "$OUT/$l.bmp" ] || fail "$l" "no snapshot was written"
+	SNAPS+=("$l")
+}
+snap_screen snap-menu bike-menu
+snap_screen snap-menu-nav bike-menu-nav
+snap_screen snap-menu-edit bike-menu-edit
+cmp -s "$OUT/snap-menu.bmp" "$OUT/snap-menu-nav.bmp" && fail snap-menu "the key script did not change the menu"
+echo "PASS bike-menu-screens: Setup menu, stepper walk and address edit render and differ"
+
+# HUD on vs off: presentation only, so the state hashes must be identical.
+HUDARGS=(--regress-bike-feed=const:230,92 --regress-modern --regress-aspect=16:9)
+run hud0 700 "${HUDARGS[@]}" --regress-bike-set=hud=0
+run hud1 700 "${HUDARGS[@]}" --regress-bike-set=hud=1 --regress-snapshot=650:"$OUT/snap-hud-modern.bmp"
+cmp -s "$OUT/hud0.s" "$OUT/hud1.s" || fail hud "the HUD changed the state hashes"
+cmp -s "$OUT/hud0.f" "$OUT/hud1.f" && fail hud "the HUD did not change the frames"
+run hudc 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=1 --regress-snapshot=650:"$OUT/snap-hud-classic.bmp"
+run hudc0 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=0
+cmp -s "$OUT/hudc0.s" "$OUT/hudc.s" || fail hud-classic "the Classic HUD changed the state hashes"
+cmp -s "$OUT/hudc0.f" "$OUT/hudc.f" && fail hud-classic "the Classic HUD did not change the frames"
+run hudsurge 2400 "${HUDARGS[@]}" --regress-bike-feed="$FEEDS/surge.csv" --regress-bike-set=hud=1 \
+	--regress-snapshot=2350:"$OUT/snap-hud-surge.bmp"
+run ingame 700 --regress-menu=bike --regress-bike-set=enabled=1 --regress-snapshot=699:"$OUT/snap-ingame-bike.bmp"
+for l in snap-hud-modern snap-hud-classic snap-hud-surge snap-ingame-bike; do
+	[ -s "$OUT/$l.bmp" ] || fail "$l" "no snapshot was written"
+	SNAPS+=("$l")
+done
+echo "PASS bike-hud: HUD on/off leave the state hashes alone, change the frames, snapshots written"
 
 # --- committed digests ---------------------------------------------------------
 tmp="$OUT/regress.new"
 : >"$tmp"
 for l in "${LABELS[@]}"; do echo "$l $(digest "$l")" >>"$tmp"; done
+for l in "${SNAPS[@]}"; do echo "$l $(sha <"$OUT/$l.bmp")" >>"$tmp"; done
 if [ "$MODE" = "--update" ]; then
 	cp "$tmp" "$BASE"
 	echo "bike digests written to $BASE"
+	if python3 -c "import PIL" >/dev/null 2>&1; then
+		mkdir -p "$ROOT/doc/ftms/screens"
+		for l in "${SNAPS[@]}"; do
+			python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" \
+				"$OUT/$l.bmp" "$ROOT/doc/ftms/screens/${l#snap-}.png"
+		done
+		echo "screens written to doc/ftms/screens"
+	fi
 elif ! diff -u "$BASE" "$tmp" >"$OUT/digests.diff"; then
 	head -n 20 "$OUT/digests.diff"
 	fail digests "output differs from test/bike/regress.txt (intentional change: tools/check_bike.sh BIN DATA OUT --update)"

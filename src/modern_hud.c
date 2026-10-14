@@ -18,6 +18,7 @@
  */
 #include "modern_hud.h"
 
+#include "bike.h"
 #include "config.h"
 #include "episodes.h"
 #include "fonthand.h"
@@ -667,6 +668,75 @@ static void hud_draw_generator(const HudPanel *p, int pi, int y)
 	hud_text(p->surface, hud_start(p, JE_textWidth(buf, TINY_FONT)), y, buf, HUD_LABEL_BANK, HUD_LABEL_DIM);
 }
 
+// ---------------------------------------------------------------------------
+// Bike readout (exercise-bike integration, presentation only).  Drawn above the
+// generator name of the 1-player status panel while the master switch and the
+// Bike HUD setting are on (bike_hud_visible()): link dot + watts + cadence, an
+// effort bar, a surge meter and an AUTO / SURGE row.  It reads bike_hud() and
+// never writes game state, settings or the RNG.
+// ---------------------------------------------------------------------------
+#define BIKE_HUD_H 24   // rows reserved above the generator name (22 drawn, 2 px gap)
+
+// Trough plus a value ramp within the hue block starting at `base`, like
+// hud_progress_bar().  `frac` is Q16 (65536 == full).
+static void hud_meter_bar(SDL_Surface *surface, int x, int y, int w, int h, int frac, int base)
+{
+	assert(w >= 4 && h >= 2 && x >= 0 && x + w <= surface->w);
+	HUD_ASSERT_FIT(surface, y, h);
+	const int top = base | 15;
+	fill_rectangle_xy(surface, x, y, x + w - 1, y + h - 1, (Uint8)base);
+	const int span = w - 2;
+	const int filled = (int)(((int64_t)span * MAX(0, MIN(frac, 65536))) >> 16);
+	for (int c = 0; c < filled; ++c)
+	{
+		int idx = base + 2 + c * HUD_BAR_RAMP / span;
+		if (c == filled - 1)
+			idx = MIN(idx + 3, top);
+		fill_rectangle_xy(surface, x + 1 + c, y, x + 1 + c, y + h - 1, (Uint8)idx);
+	}
+}
+
+static void hud_draw_bike(const HudPanel *p, int y)
+{
+	const BikeHud *b = bike_hud();
+	const int avail = p->w - 2 * HUD_MARGIN;
+	char w_text[16], line[40];
+	bool held = false;
+
+	snprintf(w_text, sizeof w_text, "%uW", (unsigned)((b->watts + 32768) >> 16));
+	snprintf(line, sizeof line, "%s %uRPM", w_text, (unsigned)((b->cadence + 32768) >> 16));
+	if (JE_textWidth(line, TINY_FONT) + 7 > avail)
+		snprintf(line, sizeof line, "%s %u", w_text, (unsigned)((b->cadence + 32768) >> 16));
+	if (JE_textWidth(line, TINY_FONT) + 7 > avail)
+		snprintf(line, sizeof line, "%s", w_text);
+
+	// Row 1: link dot, then watts and cadence (dim while the link is lost).
+	const int content_w = 4 + 3 + JE_textWidth(line, TINY_FONT);
+	const int x = hud_start(p, content_w);
+	HUD_ASSERT_FIT(p->surface, y, 6);
+	fill_rectangle_xy(p->surface, x, y + 1, x + 3, y + 4, (Uint8)bike_link_color(b->link, b->lost));
+	hud_text(p->surface, x + 7, y, line, HUD_VALUE_BANK, b->lost ? HUD_LABEL_DIM : HUD_VALUE_BRIGHT);
+
+	// Rows 2 and 3: effort (green) and surge meter (red to yellow).
+	hud_meter_bar(p->surface, HUD_MARGIN, y + 8, avail, 3, b->effort_norm, 192);
+	hud_meter_bar(p->surface, HUD_MARGIN, y + 12, avail, 3, b->surge_meter, 112);
+
+	// Row 4: AUTO (HOLD while held back) and SURGE.
+	const bool autofire = bike_autofire_state(&held);
+	char flags[24] = "";
+	if (autofire)
+		snprintf(flags, sizeof flags, "%s", held ? "AUTO HOLD" : "AUTO");
+	if (b->surging)
+		snprintf(flags + strlen(flags), sizeof flags - strlen(flags), "%sSURGE", flags[0] != '\0' ? " " : "");
+	if (flags[0] != '\0')
+	{
+		char out[32];
+		hud_truncate(out, sizeof out, flags, avail);
+		hud_text(p->surface, hud_start(p, JE_textWidth(out, TINY_FONT)), y + 16, out, HUD_VALUE_BANK,
+		         (autofire && held) ? HUD_LABEL_DIM : HUD_VALUE_BRIGHT);
+	}
+}
+
 // Weapon power pips (1..11), as the original sidebar's segments.
 static void hud_draw_pips(const HudPanel *p, int pi, int port, int y)
 {
@@ -913,7 +983,9 @@ static void hud_draw_status_panel(const HudPanel *p)
 
 	// Bottom stack: the generator name (roomy panels) over the cheat notice.
 	const int gen_y = hud_cheat_y(p->w) - ST_GEN_GAP - 6;
-	const int lower_top = p->roomy ? gen_y : hud_cheat_y(p->w);
+	const bool bike = bike_hud_visible();
+	const int bike_base = p->roomy ? gen_y : hud_cheat_y(p->w);
+	const int lower_top = bike ? bike_base - BIKE_HUD_H : bike_base;
 
 	// Shield, armor and power reserve: three vertical bars, bottom-up, the whole
 	// block (label row + bars + value row) centred in the free space between the
@@ -927,6 +999,9 @@ static void hud_draw_status_panel(const HudPanel *p)
 
 	if (p->roomy)
 		hud_draw_generator(p, 0, gen_y);
+
+	if (bike)
+		hud_draw_bike(p, bike_base - BIKE_HUD_H);
 
 	hud_draw_cheat(p);
 }
