@@ -59,6 +59,13 @@ static FILE *log_file = NULL;
 static const char *log_path = NULL;
 static unsigned long log_lines = 0;
 
+/* --ftms-log: per-second calibration CSV (T5.2); never active unless the option is given */
+static FILE *calib_file = NULL;
+static const char *calib_path = NULL;
+static uint64_t calib_next_us = 0;
+static unsigned long calib_frames, calib_refill_sum, calib_stock_sum, calib_fired, calib_refused;
+static unsigned long calib_rows;
+
 /* ---- settings ------------------------------------------------------------ */
 
 void bike_settings_default(BikeSettings *s)
@@ -69,6 +76,7 @@ void bike_settings_default(BikeSettings *s)
 	s->autofire_key2 = SDL_SCANCODE_APPLICATION;
 	s->pointer_sens_pct = 100;
 	s->ftp_w = 200;
+	s->superbomb_cooldown_s = 60; /* BIKE_SUPERBOMB_COOLDOWN_S */
 	s->floor = 8;
 	s->bias_pct = 50;
 	s->gain_pct = 100;
@@ -183,6 +191,13 @@ bool bike_settings_set(const char *key, const char *value)
 		s->floor = (uint8_t)n;
 		return true;
 	}
+	if (strcmp(key, "superbomb_cooldown") == 0)
+	{
+		if (!parse_uint(value, 0, 600, &n))
+			return false;
+		s->superbomb_cooldown_s = (uint16_t)n;
+		return true;
+	}
 	if (strcmp(key, "bias") == 0)
 	{
 		if (!parse_uint(value, 0, 200, &n))
@@ -258,7 +273,7 @@ bool bike_settings_set_list(const char *list)
 static const char *const config_keys[] = {
 	"enabled", "generator", "hud", "surge_superbomb", "surge_sidekick", "surge_special", "surge_shield",
 	"autofire", "autofire_reserve", "autofire_key", "autofire_key2", "air_mouse", "pointer_sensitivity",
-	"pointer_smoothing", "touch", "remote_buttons", "ftp", "floor", "bias", "strength", "cap",
+	"pointer_smoothing", "touch", "remote_buttons", "ftp", "floor", "superbomb_cooldown", "bias", "strength", "cap",
 	"bridge_host", "bridge_port"
 };
 
@@ -288,6 +303,7 @@ static void setting_text(const char *key, char *out, size_t cap)
 	else if (strcmp(key, "remote_buttons") == 0) str = onoff(s->remote_buttons);
 	else if (strcmp(key, "ftp") == 0) num = s->ftp_w;
 	else if (strcmp(key, "floor") == 0) num = s->floor;
+	else if (strcmp(key, "superbomb_cooldown") == 0) num = s->superbomb_cooldown_s;
 	else if (strcmp(key, "bias") == 0) num = s->bias_pct;
 	else if (strcmp(key, "strength") == 0) num = s->gain_pct;
 	else if (strcmp(key, "cap") == 0) num = s->cap_pct;
@@ -387,6 +403,33 @@ void bike_regress_pin(const char *set_list)
 
 void bike_log_open(const char *path) { log_path = path; }
 
+/* --ftms-test-level=E:L (local integration check only): start a level directly, outside regress mode,
+ * so the live bridge is used.  Forces the master switch and the generator on. */
+static int test_episode = 0, test_level = 0;
+
+bool bike_test_level_set(const char *spec)
+{
+	unsigned e, l;
+	char extra;
+
+	if (sscanf(spec, "%u:%u%c", &e, &l, &extra) != 2 || e < 1 || e > 5 || l < 1 || l > 99)
+		return false;
+	test_episode = (int)e;
+	test_level = (int)l;
+	bike_settings.master = true;
+	bike_settings.generator = true;
+	return true;
+}
+
+bool bike_test_level(int *episode, int *level)
+{
+	if (test_episode == 0)
+		return false;
+	*episode = test_episode;
+	*level = test_level;
+	return true;
+}
+
 /* ---- lifecycle ----------------------------------------------------------- */
 
 void bike_init(void)
@@ -406,6 +449,12 @@ void bike_shutdown(void)
 		        (unsigned)player[0].superbombs, (unsigned)power);
 	}
 	bike_controls_shutdown();
+	if (calib_file != NULL)
+	{
+		fclose(calib_file);
+		calib_file = NULL;
+		logInfo("Bike calibration log: wrote %lu rows to '%s'.", calib_rows, calib_path);
+	}
 	if (log_file != NULL)
 	{
 		fclose(log_file);
@@ -479,6 +528,37 @@ bool bike_generator_on(void)
 }
 
 /* ---- frame tick ---------------------------------------------------------- */
+
+static void calib_row(void)
+{
+	double f;
+
+	if (calib_next_us == 0)
+		calib_next_us = clock_us + 1000000u;
+	if (clock_us < calib_next_us)
+		return;
+	if (calib_file == NULL)
+	{
+		calib_file = fopen(calib_path, "wb");
+		if (calib_file == NULL)
+			logFatal("Failed to open bike calibration log '%s'.", calib_path);
+		fputs("t_s,watts,cadence,link,effort_w,effort_norm,surge_meter,refill_per_frame,stock_power_add,power,"
+		      "shots_fired,shots_refused,shield,superbombs,autofire,blend\n", calib_file);
+	}
+	f = calib_frames > 0 ? (double)calib_frames : 1.0;
+	fprintf(calib_file, "%.1f,%.1f,%.1f,%s,%.1f,%.3f,%.3f,%.2f,%.2f,%u,%lu,%lu,%u,%u,%s,%.3f\n", (double)clock_us / 1e6,
+	        (double)hud.watts / 65536.0, (double)hud.cadence / 65536.0, bike_link_name(hud.link),
+	        (double)sig.effort_w / 65536.0, (double)hud.effort_norm / 65536.0, (double)hud.surge_meter / 65536.0,
+	        (double)calib_refill_sum / f, (double)calib_stock_sum / f, (unsigned)power, calib_fired, calib_refused,
+	        (unsigned)player[0].shield, (unsigned)player[0].superbombs,
+	        hud.autofire_on ? (hud.autofire_held ? "hold" : "on") : "off", (double)bike_rules_blend() / 65536.0);
+	fflush(calib_file);
+	++calib_rows;
+	calib_frames = calib_refill_sum = calib_stock_sum = calib_fired = calib_refused = 0;
+	calib_next_us += 1000000u;
+	if (calib_next_us <= clock_us)
+		calib_next_us = clock_us + 1000000u;
+}
 
 void bike_frame_tick(void)
 {
@@ -572,6 +652,9 @@ void bike_frame_tick(void)
 	hud.surging = sig.surging;
 	hud.autofire_on = bike_autofire_active();
 	hud.autofire_held = bike_autofire_held_back();
+
+	if (calib_path != NULL && gate)
+		calib_row();
 
 	++tick_count;
 }
@@ -694,10 +777,28 @@ uint64_t bike_state_digest(void)
 	return h;
 }
 
-bool bike_log_active(void) { return log_path != NULL; }
+bool bike_log_active(void) { return log_path != NULL || calib_path != NULL; }
 
-void bike_log_refill(unsigned add, unsigned power_after)
+void bike_calib_open(const char *path) { calib_path = path; }
+
+void bike_note_shot(bool fired)
 {
+	if (calib_path == NULL)
+		return;
+	if (fired)
+		++calib_fired;
+	else
+		++calib_refused;
+}
+
+void bike_log_refill(unsigned add, unsigned stock_add, unsigned power_after)
+{
+	if (calib_path != NULL)
+	{
+		++calib_frames;
+		calib_refill_sum += add;
+		calib_stock_sum += stock_add;
+	}
 	if (log_path == NULL)
 		return;
 	if (log_file == NULL)

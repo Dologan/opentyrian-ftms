@@ -169,6 +169,8 @@ const Options *JE_paramOptions(void)
 		{ 450, 0,   "ftms-bridge",       true },
 		{ 451, 0,   "ftms-ftp",          true },
 		{ 452, 0,   "ftms-off",          false },
+		{ 453, 0,   "ftms-log",          true },
+		{ 455, 0,   "ftms-test-level",   true },
 		
 		{ 0, 0, NULL, false }
 	};
@@ -350,6 +352,8 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
 			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
 			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
+			logInfo("  --ftms-log=FILE              Write a per-second bike calibration CSV (watts, refill, power, shots) while playing");
+			logInfo("  --ftms-test-level=E:L        Local bridge check: start that level directly with the bike on (tools/check_bike_bridge.sh)");
 			logInfo("  --ftms-off                   Force the bike features off for this run");
 			logInfo("  --regress-front-weapon=N      Regress only: front weapon id (0-42) for --regress-script/--regress-level");
 			logInfo("  --regress-front-power=N       Regress only: front weapon power (1-11) for --regress-script/--regress-level");
@@ -1002,6 +1006,18 @@ void JE_paramCheck(int argc, char *argv[])
 			if (!bike_settings_set("ftp", option.arg))
 			{
 				logError("%s: --ftms-ftp must be 50-500 watts", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 453: // --ftms-log=FILE
+			bike_calib_open(option.arg);
+			break;
+
+		case 455: // --ftms-test-level=E:L
+			if (!bike_test_level_set(option.arg))
+			{
+				logError("%s: --ftms-test-level must be EPISODE:LEVEL, for example 1:3", argv[0]);
 				exit(EXIT_FAILURE);
 			}
 			break;

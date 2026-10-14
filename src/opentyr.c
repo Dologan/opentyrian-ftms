@@ -1459,6 +1459,26 @@ int main(int argc, char *argv[])
 		return EXIT_SUCCESS;
 	}
 
+	{
+		int test_e, test_l;
+
+		if (bike_test_level(&test_e, &test_l))
+		{
+			// --ftms-test-level (tools/check_bike_bridge.sh): the regress script path
+			// without regress mode, so the live bridge feeds the bike engine.
+			JE_initPlayerData();
+			JE_initEpisode((JE_byte)test_e);
+			initial_episode_num = (JE_byte)test_e;
+			episodeNum = (JE_byte)test_e;
+			mainLevel = (JE_byte)test_l;
+			playDemo = false;
+
+			JE_main();
+
+			return EXIT_SUCCESS;
+		}
+	}
+
 	if (regress_script_active())
 	{
 		// Start the requested level through the episode script, skipping intro,
