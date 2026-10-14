@@ -20,6 +20,11 @@ Convenções:
 - **Testes:** `tools/check_bike.sh` e `make regress-bike` (flag desligada = baseline, tudo explicitamente desligado = baseline, 150 W constante, rampa, queda do link, parada, FTP 50 e 500, duas pedaladas Q200B, determinismo; digests em `test/bike/regress.txt`). Um subconjunto roda no quick.
 - Pendente: transporte da ponte (`bike_ws`), efeitos de surge, auto-fire, HUD e menus (tarefas seguintes).
 
+### Bike (FTMS): efeitos de surge e auto-fire de alternar (T3.1, T3b.1)
+- **Surge:** quatro efeitos, cada um com toggle próprio sob o mestre (superbomb ligado por padrão, os outros desligados): +1 superbomb por overdrive-ready (teto 10), carga de sidekick 2x, recarga de special com decremento extra, regen de escudo de 15 até 8 quadros mantendo o custo do pool. Só com o portão aberto.
+- **Auto-fire:** `src/bike_controls.[ch]`. A opção só habilita; um aperto durante o jogo (tecla `A` ou Menu, ou clique do analógico direito) liga/desliga, sem menu, sem novo slot de `keySettings`. Reserva Off/25 %/50 % de 900 segura o tiro automático enquanto `power` está abaixo dela, para o escudo regenerar; o fogo manual ignora a reserva. O trinco sobrevive entre fases e começa desligado a cada execução. Acessores para o HUD: `bike_autofire_active()`, `bike_autofire_held_back()`.
+- **Regress:** `--regress-bike-events` (id 443) injeta alternâncias, fogo manual, mudanças de configuração e equipamento; novos casos em `check_bike.sh` com digests em `test/bike/regress.txt`. Os digests antigos não mudaram (os casos com overdrive fixam `surge_superbomb=0`); 207/207 casos do jogo inalterados.
+
 ### Portes do OpenTyrian upstream (carlreinke, 216c771..624e2f2)
 - Portados por intenção, um commit cada, citando o hash upstream. Nenhuma linha de base mudou: 207/207 casos 2.1 passam.
   - `216c771` `math.h` incluído onde usado (8 `.c`) e `TreatSpecificWarningsAsErrors=4013` no projeto MSVC.

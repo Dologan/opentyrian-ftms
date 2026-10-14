@@ -211,6 +211,17 @@ Projeto em `doc/ftms/design.md`. Tudo é opcional e **desligado por padrão**: c
 - **Configuração:** seção `[ftms]` do `opentyrian.cfg` (não grava nada se tudo estiver no padrão); CLI `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W`, `--ftms-off`; regress fixa tudo desligado (`--regress-bike-feed`, `--regress-bike-set`, `--regress-bike-log`).
 - **Estado dos hashes:** `power`, `lastPower` e o digest da bike só entram no hash de estado quando há feed ou o mestre está fixado ligado.
 - **Testes:** `tools/check_bike.sh` (`make regress-bike`; no quick só o subconjunto flag-off, tudo-desligado e determinismo a 150 W), com digests em `test/bike/regress.txt`.
+- **Efeitos de surge (T3.1):** cada um é um toggle próprio sob o mestre, só com o portão aberto e fonte ativa; `surge_superbomb` vem ligado, os outros desligados. Todos em inteiros, em `bike_rules`.
+  - `surge_superbomb`: +1 `player[0].superbombs` a cada evento overdrive-ready (teto 10, como o pickup de `mainint.c`). Em surge sustentado o evento sai a cada ~5,3 s, então o teto é o limite real.
+  - `surge_sidekick`: o reinício de `charge_ticks` cai de 20 para 10 enquanto em surge (carga 2x mais rápida; `mainint.c`).
+  - `surge_special`: um decremento extra de `specialWait` por quadro em surge (`varz.c`).
+  - `surge_shield`: o intervalo de regen do escudo vai de 15 para `15 - round(7·n)` quadros (n = esforço normalizado, 8 no máximo) em surge; o custo `shieldT` por ponto não muda, então nunca fica pior que o stock (`tyrian2.c`).
+- **Auto-fire (T3b.1), `src/bike_controls.[ch]`:** a opção `autofire = off|toggle` só decide se o recurso existe; o liga/desliga é durante o jogo, com um aperto, sem menu.
+  - **Entradas** (tabela pequena no topo de `bike_controls.c`, fácil de trocar depois da sonda T3b.0; nenhuma é slot de `keySettings`): `autofire_key` (padrão `A`) e `autofire_key2` (padrão `Application`, a tecla Menu do controle remoto), mais o clique do analógico direito do gamepad. O clique direito do mouse não é usado: é ação configurável do jogo e pertence ao T3b.2. Flanco de subida inverte o trinco; flancos com o portão fechado são ignorados.
+  - **Estado:** o trinco começa desligado a cada execução e **sobrevive entre fases** (decisão do design §6); desligar a opção `autofire` o zera. Fora do portão (rede, demo, 2P, arcade) nada acontece.
+  - **Gancho:** `mainint.c`, depois do bloco de teclado e antes do empacotamento de rede: `button[0] = true` se o trinco está ligado e `power >= reserva·9` (reserva = Off/25 %/50 % de 900). O fogo manual entra antes (OR) e ignora a reserva. Sem histerese: o tiro passa a ser limitado pela renda no nível da reserva. 25 % = 225 > maior `shieldT` stock (180), então o escudo continua regenerando.
+  - **HUD:** `bike_autofire_active()` e `bike_autofire_held_back()` (também em `BikeHud.autofire_on/held`).
+- **Regress:** `--regress-bike-events=FILE` (id 443; linhas `tick,ação[,arg]`): `autofire_toggle|autofire_on|autofire_off`, `set,K=V`, `fire_on|fire_off` (fogo manual injetado), e só para teste `immortal` e `equip,special=N|sidekicks=L/R|shield=N`. `check_bike.sh` ganhou os casos de surge (cada efeito ligado contra todos desligados), auto-fire ligado/desligado no meio da fase, reserva sob renda baixa e fogo manual ignorando a reserva; linhas de cobertura `Bike effects:`, `Bike autofire:` e `Bike end state:`. Os casos antigos fixam `surge_superbomb=0` (o padrão é ligado), então seus digests não mudaram; o digest de estado só inclui o trinco depois de ele ser usado.
 
 ---
 
