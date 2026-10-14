@@ -18,6 +18,7 @@
  */
 #include "varz.h"
 
+#include "bike.h"
 #include "config.h"
 #include "drawlist.h"
 #include "editship.h"
@@ -407,6 +408,7 @@ void JE_drawOptionLevel(void)
 
 void JE_tyrianHalt(JE_byte code)
 {
+	bike_shutdown();
 	deinit_audio();
 	deinit_video();
 	deinit_joysticks();
