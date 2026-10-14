@@ -65,6 +65,7 @@
 #include "vfx.h"
 
 #include <assert.h>
+#include <math.h>
 #include <string.h>
 
 bool button[4];
