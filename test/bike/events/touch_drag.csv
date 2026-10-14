@@ -1,0 +1,15 @@
+# touch controls (T3b.3): a finger dragged on the playfield steers the ship (left, then down)
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
+10,finger_down,1,500,500
+12,finger_move,1,450,500
+14,finger_move,1,400,500
+16,finger_move,1,350,500
+18,finger_up,1
+100,finger_down,1,500,300
+102,finger_move,1,500,360
+104,finger_move,1,500,420
+106,finger_move,1,500,480
+108,finger_up,1

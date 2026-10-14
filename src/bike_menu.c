@@ -96,6 +96,15 @@ void bike_menu_regress_keys(const char *keys)
 	snprintf(regress_keys, sizeof regress_keys, "%s", keys != NULL ? keys : "");
 }
 
+/* The help line; the touch row warns when its fire companion is off (touch has
+ * no fire zone: auto-fire is the way to shoot). */
+static const char *row_help(RowId id)
+{
+	if (id == ROW_TOUCH && bike_settings.touch && !bike_settings.autofire)
+		return "Touch fires via Auto-fire: set it to Toggle.";
+	return rows[id].help;
+}
+
 /* ---- row values ----------------------------------------------------------- */
 
 static bool *bool_field(RowId id)
@@ -372,7 +381,7 @@ void bike_menu(bool in_level)
 			JE_textShade(VGAScreen, X_NAME + 9 + JE_textWidth("Status: ", TINY_FONT), Y_STATUS, status, 15, 2, PART_SHADE);
 		}
 		JE_textShade(VGAScreen, X_NAME, Y_HELP,
-		             edit_error != NULL ? edit_error : (editing ? "Type the address. Enter saves, Esc cancels." : rows[selected].help),
+		             edit_error != NULL ? edit_error : (editing ? "Type the address. Enter saves, Esc cancels." : row_help((RowId)selected)),
 		             15, edit_error != NULL ? 6 : 4, PART_SHADE);
 
 		if (restart)

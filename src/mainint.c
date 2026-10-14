@@ -20,6 +20,7 @@
 
 #include "backgrnd.h"
 #include "bike_controls.h"
+#include "bike_touch.h"
 #include "bike_rules.h"
 #include "bike.h"
 #include "bike_menu.h"
@@ -3854,6 +3855,16 @@ redo:
 
 				if (airMouse)
 					bike_controls_media_buttons(button); // media next/previous: rear mode, sidekicks
+
+				// Touch (T3b.3): the finger drag joins the mouse delta path, the
+				// side-panel tap zones hold their game buttons.  Gate closed: nothing.
+				if (playerNum_ == 1)
+				{
+					int touchX = mouseXC, touchY = mouseYC;
+					bike_touch_input(&touchX, &touchY, button);
+					mouseXC = (JE_integer)touchX;
+					mouseYC = (JE_integer)touchY;
+				}
 
 				// Bike auto-fire (T3b.1): latched toggle with an energy reserve.
 				// Manual fire was OR-ed above, so the reserve never blocks it; the gate

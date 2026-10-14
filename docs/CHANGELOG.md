@@ -13,6 +13,12 @@ Convenções:
 
 ## 2026-10-14
 
+### Bike (FTMS): controles por toque (T3b.3)
+- **Arrastar para dirigir:** o dedo no campo de jogo move a nave pelo seu deslocamento, somado ao caminho `mouseXC/YC` (clamp de ±30 e inércia stock mantidos), com a mesma `pointer_sensitivity` do mouse aéreo. O mouse sintetizado pelo SDL3 a partir do dedo é descartado em jogo (sem contagem dupla nem tiro por clique) e mantido fora dele, então os toques em menus continuam sendo cliques; o toque não passa pela tradução OK/Voltar do mouse aéreo.
+- **Zonas nos painéis laterais:** esquerda REAR, SK-L, SK-R; direita BOMB, AUTO, MENU, PAUSE; dois dedos rápidos abrem o menu do jogo. O Modern desenha as zonas (só apresentação); no Classic e no 4:3 as zonas são a margem e a barra do quadro de 320. Auto-fire é o companheiro esperado: com Touch ligado e Auto-fire Off, o menu avisa e o rótulo AUTO fica apagado.
+- **Código:** novo `src/bike_touch.[ch]` (também em `visualc/`), com um gancho em `handleSdlEvents`, um em `mainint.c` e um em `bike_controls_frame`.
+- **Testes:** `--regress-bike-events` ganhou `finger_down|finger_move|finger_up` e `equip,rear=N`; casos novos em `check_bike.sh` e uma captura do HUD com as zonas em `doc/ftms/screens/hud-touch.png`. Os 207 baselines e os digests antigos de `test/bike/regress.txt` não mudaram. O que verificar na Surface: `doc/ftms/controls-probe.md`.
+
 ### Bike (FTMS): mouse aéreo e navegação pelo controle remoto (T3b.2, parte do T3b.4)
 - **Mouse aéreo:** com mestre e `air_mouse` ligados, o movimento relativo do ponteiro dirige a nave do jogador 1 em 1P (`inputDevice` forçado a 0 no `JE_playerMovement`), escalado por `pointer_sensitivity`, mantido o clamp de ±30. OK mantém o tiro, o clique direito abre o menu do jogo, Play/Pause pausa, Próxima/Anterior trocam o tiro traseiro e disparam os sidekicks. One-Euro não foi portado.
 - **Menus:** OK vira Enter e Voltar vira Esc (na linha focada, sem olhar o ponteiro), outros botões e a deriva do ponteiro são ignorados. Corrige o Voltar da loja, do cubo de dados e do lançador, o clique direito no Sim do pedido de saída, o título que saía com Voltar (agora pergunta) e os nomes em branco (`PILOT`). O pedido de saída começa em Não nesse modo.

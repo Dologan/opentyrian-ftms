@@ -19,6 +19,8 @@
 #     "Bike autofire:", "Bike end state:") prove each path really ran.
 #   - the older cases pin surge_superbomb=0 (its default is on), so their digests are the ones
 #     committed before the surge effects existed.
+#   - touch (T3b.3): injected finger events (Modern 16:9): a drag steers (sensitivity-scaled), each side-panel
+#     tap zone acts, a quick two-finger tap opens the in-game menu, and touch off or the master off is stock.
 #   - UI: the Bike and Controls setup screens, the in-game bike overlay and the HUD
 #     (Classic, Modern 16:9, a surge ride) are snapshotted and hashed; the HUD on/off
 #     state hashes must be identical.
@@ -236,6 +238,60 @@ am ampauseoff air_pause.csv enabled=1,air_mouse=0
 [ "$(cov ampause pauses)" = 1 ] && [ "$(cov ampauseoff pauses)" = 0 ] || fail air-pause "media Play/Pause did not pause exactly when air_mouse is on"
 differs amidle ampause && same amidle0 ampauseoff || fail air-pause "the pause run is not observable, or air_mouse off is not stock"
 echo "PASS bike-air-menu: Back opens the in-game menu, Play/Pause pauses (only with air_mouse on)"
+# --- touch controls (T3b.3) -----------------------------------------------------
+# Injected finger events (--regress-bike-events; the harness drops real SDL input) go through
+# the same handlers as SDL_EVENT_FINGER_*.  Panel zones need Modern widescreen, so these runs
+# are Modern 16:9; x, y are 1/1000 of the window.  Menu, pause and two-finger taps land on tick
+# 498, the last tick of the run (the in-level menus loop forever on input).
+TMX=(--regress-modern --regress-aspect=16:9)
+tm() { # label events-file settings; runs twice and checks determinism
+	local l=$1 e=$2 st=$3
+	run "$l" 600 "${TMX[@]}" --regress-bike-events="$EVD/$e" --regress-bike-set="$st"
+	run "${l}b" 600 "${TMX[@]}" --regress-bike-events="$EVD/$e" --regress-bike-set="$st"
+	for x in f s; do cmp -s "$OUT/$l.$x" "$OUT/${l}b.$x" || fail "$l" "not deterministic ($x)"; done
+	LABELS+=("$l")
+}
+TON=enabled=1,touch=1,autofire=toggle
+TOFF=enabled=1,touch=0,autofire=toggle
+tm tidle touch_idle.csv $TON
+tm tidle0 touch_idle.csv $TOFF # stock input: the baseline for every touch-off comparison
+tm tidlem touch_idle.csv enabled=0,touch=0
+tm tidlenaf touch_idle.csv enabled=1,touch=1,autofire=off
+for p in 50 100 200; do tm "tnudge$p" touch_nudge.csv $TON,pointer_sensitivity=$p; done
+tm tdrag touch_drag.csv $TON
+[ "$(cov tdrag steered)" -gt 0 ] && differs tidle tdrag || fail touch-steer "the drag did not steer the ship"
+tx50=$(endpos tnudge50 | cut -d' ' -f1) tx100=$(endpos tnudge100 | cut -d' ' -f1) tx200=$(endpos tnudge200 | cut -d' ' -f1)
+[ "$tx50" -gt "$tx100" ] && [ "$tx100" -gt "$tx200" ] || fail touch-steer "sensitivity does not scale the drag (x $tx50 / $tx100 / $tx200 at 50 / 100 / 200 %)"
+tm tdragoff touch_drag.csv $TOFF
+tm tdragm touch_drag.csv enabled=0,touch=1
+same tidle0 tdragoff && same tidlem tdragm || fail touch-steer "the drag steered with touch or the master off (it must stay stock)"
+echo "PASS bike-touch-steer: drag steers (end x $tx50 / $tx100 / $tx200 at 50 / 100 / 200 %), deterministic; touch off or master off = stock"
+
+for z in rear skl skr bomb; do tm "t$z" "touch_$z.csv" $TON; differs tidle "t$z" || fail touch-zone "the $z zone changed nothing"; done
+[ "$(cov trear zone_taps)" = 2 ] && [ "$(cov tskl zone_taps)" = 1 ] && [ "$(cov tskr zone_taps)" = 1 ] && [ "$(cov tbomb zone_taps)" = 1 ] || fail touch-zone "zone tap coverage"
+differs tskl tskr && differs tskl tbomb && differs tskr tbomb || fail touch-zone "the sidekick and bomb zones are not distinct"
+tm tauto touch_auto.csv $TON
+tm tautonaf touch_auto.csv enabled=1,touch=1,autofire=off
+[ "$(cov tauto tautos)" = 2 ] && [ "$(cov tauto toggles)" = 2 ] && differs tidle tauto || fail touch-zone "the AUTO zone did not toggle auto-fire"
+[ "$(cov tautonaf toggles)" = 0 ] && same tidlenaf tautonaf || fail touch-zone "the AUTO zone acted with the auto-fire setting off"
+tm tmenu touch_menu.csv $TON
+tm tpause touch_pause.csv $TON
+[ "$(cov tmenu tmenus)" = 1 ] && differs tidle tmenu || fail touch-zone "the MENU zone did not open the in-game menu"
+[ "$(cov tpause tpauses)" = 1 ] && differs tidle tpause || fail touch-zone "the PAUSE zone did not pause"
+for z in rear skl skr bomb auto menu pause; do
+	run "tz${z}off" 600 "${TMX[@]}" --regress-bike-events="$EVD/touch_$z.csv" --regress-bike-set="$TOFF"
+	same tidle0 "tz${z}off" || fail touch-zone "the $z zone acted with touch off (it must stay stock)"
+done
+echo "PASS bike-touch-zones: REAR, SK-L, SK-R, BOMB, AUTO, MENU and PAUSE each act (only with touch on); AUTO is a no-op with auto-fire off"
+
+tm ttwo touch_two.csv $TON
+tm tslow touch_slow.csv $TON
+[ "$(cov ttwo two_finger)" = 1 ] && [ "$(cov ttwo tmenus)" = 1 ] && differs tidle ttwo || fail touch-two "a quick two-finger tap did not open the in-game menu"
+[ "$(cov tslow two_finger)" = 0 ] && [ "$(cov tslow tmenus)" = 0 ] && same tidle tslow || fail touch-two "a slow two-finger touch acted"
+run ttwooff 600 "${TMX[@]}" --regress-bike-events="$EVD/touch_two.csv" --regress-bike-set="$TOFF"
+same tidle0 ttwooff || fail touch-two "the two-finger tap acted with touch off"
+echo "PASS bike-touch-two: a quick two-finger tap opens the in-game menu; a slow one and touch off do nothing"
+
 # --- UI snapshots: setup menu screens and the HUD -------------------------------
 # The BMPs are hashed into test/bike/regress.txt (snap-*); --update also renders them
 # as PNGs under doc/ftms/screens when python3 with PIL is available.
@@ -260,6 +316,10 @@ run hud0 700 "${HUDARGS[@]}" --regress-bike-set=hud=0
 run hud1 700 "${HUDARGS[@]}" --regress-bike-set=hud=1 --regress-snapshot=650:"$OUT/snap-hud-modern.bmp"
 cmp -s "$OUT/hud0.s" "$OUT/hud1.s" || fail hud "the HUD changed the state hashes"
 cmp -s "$OUT/hud0.f" "$OUT/hud1.f" && fail hud "the HUD did not change the frames"
+# Touch zones on the panels: presentation only (state hashes of the HUD run), and they change the frames.
+run hudt 700 "${HUDARGS[@]}" --regress-bike-set=hud=1,touch=1,autofire=toggle --regress-snapshot=650:"$OUT/snap-hud-touch.bmp"
+cmp -s "$OUT/hud1.s" "$OUT/hudt.s" || fail hud-touch "the touch zones changed the state hashes"
+cmp -s "$OUT/hud1.f" "$OUT/hudt.f" && fail hud-touch "the touch zones did not change the frames"
 run hudc 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=1 --regress-snapshot=650:"$OUT/snap-hud-classic.bmp"
 run hudc0 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=0
 cmp -s "$OUT/hudc0.s" "$OUT/hudc.s" || fail hud-classic "the Classic HUD changed the state hashes"
@@ -267,7 +327,7 @@ cmp -s "$OUT/hudc0.f" "$OUT/hudc.f" && fail hud-classic "the Classic HUD did not
 run hudsurge 2400 "${HUDARGS[@]}" --regress-bike-feed="$FEEDS/surge.csv" --regress-bike-set=hud=1 \
 	--regress-snapshot=2350:"$OUT/snap-hud-surge.bmp"
 run ingame 700 --regress-menu=bike --regress-bike-set=enabled=1 --regress-snapshot=699:"$OUT/snap-ingame-bike.bmp"
-for l in snap-hud-modern snap-hud-classic snap-hud-surge snap-ingame-bike; do
+for l in snap-hud-modern snap-hud-classic snap-hud-surge snap-ingame-bike snap-hud-touch; do
 	[ -s "$OUT/$l.bmp" ] || fail "$l" "no snapshot was written"
 	SNAPS+=("$l")
 done
