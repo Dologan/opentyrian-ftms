@@ -65,9 +65,10 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
   | 410–419 | CRT filter |
   | 420–429 | progress |
   | 430–439 | depth layers (435–437: light/fog tuning: `--regress-light-scale`, `--regress-light-radius`, `--regress-fog-strength`) |
+  | 440–459 | bike/FTMS: 440 `--regress-bike-feed`, 441 `--regress-bike-log`, 442 `--regress-bike-set`, 443 reserved (`--regress-bike-events`); 450 `--ftms-bridge`, 451 `--ftms-ftp`, 452 `--ftms-off`; 453–459 reserved |
 
 - **Guards run by `make regress`:**
-  - `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`;
+  - `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_bike_effort.sh`, `check_bike.sh` (`make regress-bike`; bike core, digests in `test/bike/regress.txt`);
   - `check_installer.sh` (synthetic zips plus `tools/curl_stub.c` named by absolute path in a test spec; it can never reach the network);
   - `check_final_regression.sh` (the §7 matrix: data-open audit, save namespaces, UI save/load, bosses, pause, gamepad, launcher handoff);
   - `check_display.sh` (runtime display changes, modal centring, launcher first frame).

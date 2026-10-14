@@ -203,6 +203,15 @@ Nuked OPL3 (modo OPL2, 49716 Hz, integer-only, LFSR de ruído próprio) converti
 ### 4.13 Modo Natal e demais
 `--xmas`/`--no-xmas` (fork do 2000, comum às duas variantes). As demos de atração seguem o HUD do modo ativo.
 
+### 4.14 Bike (FTMS), núcleo
+Projeto em `doc/ftms/design.md`. Tudo é opcional e **desligado por padrão**: com o interruptor mestre (`[ftms] enabled`) desligado, ou sem fonte de dados, o jogo é idêntico ao stock e os 207 baselines não mudam.
+- **Módulos:** `bike_effort` (motor de esforço em ponto fixo Q16.16, sem `float`), `bike_feed` (feeds CSV e `const:W[,RPM]`), `bike` (settings, fonte, portão, tick por quadro), `bike_rules` (mapeamento C: `renda = clamp(G·(bias + gain·n), F, G·cap)` com acumulador de resto exato, e mistura de volta ao `powerAdd` stock após 1,5 s sem link, a 1/2 por segundo; nunca zera).
+- **Portão** (`bike_gate_open`): mestre ligado, dentro de uma fase, e não 2P, não `onePlayerAction`, não rede, não demo (tocar/gravar), não galaga, não `constantPlay`. O gerador ainda exige fonte e ao menos uma amostra.
+- **Ganchos no jogo:** `bike_frame_tick()` uma vez por passagem de `level_loop`; o reabastecimento da barra de energia usa `bike_rules_power_add(powerAdd)` só quando o gerador da bike está ativo; `bike_service()` em `handleSdlEvents()` (ainda sem transporte).
+- **Configuração:** seção `[ftms]` do `opentyrian.cfg` (não grava nada se tudo estiver no padrão); CLI `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W`, `--ftms-off`; regress fixa tudo desligado (`--regress-bike-feed`, `--regress-bike-set`, `--regress-bike-log`).
+- **Estado dos hashes:** `power`, `lastPower` e o digest da bike só entram no hash de estado quando há feed ou o mestre está fixado ligado.
+- **Testes:** `tools/check_bike.sh` (`make regress-bike`; no quick só o subconjunto flag-off, tudo-desligado e determinismo a 150 W), com digests em `test/bike/regress.txt`.
+
 ---
 
 ## 5. Tyrian 2000
@@ -222,7 +231,7 @@ Comandos e opções completos: [`AGENTS.md`](../AGENTS.md). Resumo do sistema:
 - **Harness headless** (`SDL_VIDEO_DRIVER=dummy`, relógio virtual): hashes por tick de quadro (8 bits + paleta e canvas Modern) e de estado (RNG, jogadores, inimigos, tiros, barras de chefe, `tempW`, eventos, explosões; escalares little-endian de largura fixa). Em modo regress só `SDL_EVENT_QUIT` passa, joysticks ficam inertes, o foco é fixo, os handlers de sinal do SDL ficam desligados (o harness reporta "killed by signal"), e no macOS o processo sobe com `SDL_HINT_MAC_BACKGROUND_APP`. Cenários jogam fases reais com a nave invencível (`youAreCheating`), então "Cheaters always prosper." aparece nos baselines.
 - **Suítes:** `make regress` (2.1: 207 casos + guards, portão da CI); `make regress-2000` (183 casos, dados necessários, paralela, manifesto e baselines em `test/regress-2000/`); `make regress-quick` (subconjunto crítico + guards baratos + 2000 opcional, ~20–25 s); `-j`/`REGRESS_JOBS`; `REGRESS_ONLY`/`--case=REGEX`. Casos Modern de gameplay rodam em `-d4`. Os baselines do 2.1 são gerados no Mac mas batem entre plataformas (todos os hashes de quadro bateram nos cinco runners).
 - **Cobertura:** demos × níveis de detalhe; 5 cenários sintéticos para os smoothies; áudio offline (`--regress-audio`); telas (`--regress-screen`, `--regress-menu`); flow com teclado virtual (`--regress-flow`); fixtures de regras; matriz final (§6.1); Depth/camadas/held/CRT/PROGRESS com checks próprios; `--regress-demo-hud-check`; stick virtual (`--regress-stick`).
-- **Guards:** `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_installer.sh` (zips sintéticos e `tools/curl_stub.c`, nunca chega à rede), `check_final_regression.sh`, `check_display.sh`, `check_progress.sh`, `check_depth_*.sh`, `check_rng_order.sh`.
+- **Guards:** `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_bike_effort.sh`, `check_bike.sh`, `check_installer.sh` (zips sintéticos e `tools/curl_stub.c`, nunca chega à rede), `check_final_regression.sh`, `check_display.sh`, `check_progress.sh`, `check_depth_*.sh`, `check_rng_order.sh`.
 - **Varreduras longas** (`--interp-check`/`--smoothness-check`/`--replay-check` completas) só no workflow manual `regress-full.yml`; nunca localmente.
 - **Processo de teste do coordenador:** só o quick localmente; push do branch e a CI como portão completo. Visual: o usuário prefere testar no jogo; capturas só a pedido.
 
