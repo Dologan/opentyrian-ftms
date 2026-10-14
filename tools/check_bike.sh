@@ -183,6 +183,48 @@ for r in 0 50; do case_run "mf$r" 1500 "$AF" --regress-bike-events="$EVD/fire_ma
 for x in f s blog; do cmp -s "$OUT/mf0.$x" "$OUT/mf50.$x" || fail manual-fire "the reserve changed manual fire ($x)"; done
 [ "$(col_min mf50 9 300)" -lt 225 ] || fail manual-fire "manual fire did not drain below the 25% line"
 echo "PASS bike-manual-fire: the reserve never holds back manual fire"
+# --- air mouse and remote buttons (T3b.2) ---------------------------------------
+# Injected pointer motion / buttons / media keys (--regress-bike-events); the harness drops
+# real SDL input, so these go straight to the bike_controls hooks.  air_menu.csv and
+# air_pause.csv press on tick 498, the last tick of this 600-frame run: the in-level menus
+# loop forever on input, so the run ends on the menu's first frame.
+am() { # label events-file settings; runs twice and checks determinism
+	local l=$1 e=$2 st=$3
+	run "$l" 600 --regress-bike-events="$EVD/$e" --regress-bike-set="$st"
+	run "${l}b" 600 --regress-bike-events="$EVD/$e" --regress-bike-set="$st"
+	for x in f s; do cmp -s "$OUT/$l.$x" "$OUT/${l}b.$x" || fail "$l" "not deterministic ($x)"; done
+	LABELS+=("$l")
+}
+endpos() { sed -n 's/.*end state: .* x=\([0-9-]*\) y=\([0-9-]*\).*/\1 \2/p' "$OUT/$1.log" | head -n 1; }
+same() { cmp -s "$OUT/$1.f" "$OUT/$2.f" && cmp -s "$OUT/$1.s" "$OUT/$2.s"; }
+am amidle air_idle.csv enabled=1,air_mouse=1
+am amidle0 air_idle.csv enabled=1,air_mouse=0 # stock input: the baseline for every air_mouse-off comparison
+for p in 50 100 200; do am "amsteer$p" air_steer.csv enabled=1,air_mouse=1,pointer_sensitivity=$p; done
+[ "$(cov amsteer100 moved)" -gt 0 ] && differs amidle amsteer100 || fail air-mouse "pointer motion did not steer the ship"
+x50=$(endpos amsteer50 | cut -d' ' -f1) x100=$(endpos amsteer100 | cut -d' ' -f1) x200=$(endpos amsteer200 | cut -d' ' -f1)
+[ "$x50" -gt "$x100" ] && [ "$x100" -gt "$x200" ] || fail air-mouse "sensitivity does not scale the motion (x $x50 / $x100 / $x200 at 50 / 100 / 200 %)"
+am amoff air_steer.csv enabled=1,air_mouse=0
+am ammaster air_steer.csv enabled=0,air_mouse=1
+am amidlem air_idle.csv enabled=0,air_mouse=0
+same amidle0 amoff && same amidlem ammaster || fail air-mouse "the pointer steered the ship with air_mouse or the master off (it must stay stock)"
+echo "PASS bike-air-steer: pointer steers (end x $x50 / $x100 / $x200 at 50 / 100 / 200 %), deterministic; air_mouse off or master off = stock"
+
+am ambtn air_buttons.csv enabled=1,air_mouse=1
+differs amidle ambtn || fail air-buttons "OK / media keys changed nothing"
+[ "$(cov ambtn media)" -ge 1 ] || fail air-buttons "the media next / previous never fired"
+am ambtnoff air_buttons.csv enabled=1,air_mouse=0
+same amidle0 ambtnoff || fail air-buttons "buttons and media keys acted with air_mouse off"
+echo "PASS bike-air-buttons: OK holds fire, media next / previous act (media=$(cov ambtn media)); air_mouse off = stock"
+
+am ammenu air_menu.csv enabled=1,air_mouse=1
+am ammenuoff air_menu.csv enabled=1,air_mouse=0
+[ "$(cov ammenu menu_opens)" = 1 ] && [ "$(cov ammenuoff menu_opens)" = 0 ] || fail air-menu "Back did not open the in-game menu exactly when air_mouse is on"
+differs amidle ammenu && same amidle0 ammenuoff || fail air-menu "the in-game menu run is not observable, or air_mouse off is not stock"
+am ampause air_pause.csv enabled=1,air_mouse=1
+am ampauseoff air_pause.csv enabled=1,air_mouse=0
+[ "$(cov ampause pauses)" = 1 ] && [ "$(cov ampauseoff pauses)" = 0 ] || fail air-pause "media Play/Pause did not pause exactly when air_mouse is on"
+differs amidle ampause && same amidle0 ampauseoff || fail air-pause "the pause run is not observable, or air_mouse off is not stock"
+echo "PASS bike-air-menu: Back opens the in-game menu, Play/Pause pauses (only with air_mouse on)"
 # --- UI snapshots: setup menu screens and the HUD -------------------------------
 # The BMPs are hashed into test/bike/regress.txt (snap-*); --update also renders them
 # as PNGs under doc/ftms/screens when python3 with PIL is available.

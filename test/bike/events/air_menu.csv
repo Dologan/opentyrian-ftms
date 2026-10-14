@@ -1,0 +1,7 @@
+# air mouse: Back (right click) opens the in-game menu.  Tick 498 is the last tick
+# of a --regress-frames=600 run of script 1:3, so the run ends on the menu's first
+# frame (the in-level menus loop forever on input).
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+498,mouse_down,r

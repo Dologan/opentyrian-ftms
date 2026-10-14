@@ -20,6 +20,8 @@
 #include "bike.h"
 #include "joystick.h"
 #include "keyboard.h"
+#include "mainint.h"
+#include "mouse_buttons.h"
 #include "logging.h"
 #include "episodes.h"
 #include "player.h"
@@ -34,7 +36,8 @@
 
 static const SDL_GamepadButton pad_toggle_buttons[] = { SDL_GAMEPAD_BUTTON_RIGHT_STICK };
 
-typedef enum { EV_TOGGLE, EV_ON, EV_OFF, EV_SET, EV_EQUIP, EV_FIRE_ON, EV_FIRE_OFF, EV_IMMORTAL } EventKind;
+typedef enum { EV_TOGGLE, EV_ON, EV_OFF, EV_SET, EV_EQUIP, EV_FIRE_ON, EV_FIRE_OFF, EV_IMMORTAL,
+		EV_MOUSE_MOVE, EV_MOUSE_DRIVE, EV_MOUSE_DOWN, EV_MOUSE_UP, EV_KEY_DOWN, EV_KEY_UP } EventKind;
 
 typedef struct
 {
@@ -49,8 +52,127 @@ static bool ever_used = false;
 static bool injected_fire = false;
 static unsigned long fired_frames, held_frames, toggles;
 
+/* air mouse / remote state (T3b.2) */
+enum { MEDIA_PLAY_PAUSE, MEDIA_NEXT, MEDIA_PREV, MEDIA_COUNT };
+static int inj_move_x, inj_move_y, inj_drive_x, inj_drive_y;
+static int rem_x, rem_y; /* sub-unit remainders of the sensitivity scale, in 1/100 */
+static uint8_t inj_buttons;
+static bool inj_media[MEDIA_COUNT];
+static bool right_armed, pause_armed;
+static unsigned long moved_units, menu_opens, pauses, media_presses;
+
 static InjectedEvent *events = NULL;
 static size_t event_count = 0, event_next = 0;
+
+bool bike_controls_remote(void)
+{
+	return bike_settings.master && bike_settings.air_mouse;
+}
+
+bool bike_controls_air_play(void)
+{
+	return bike_controls_remote() && bike_gate_open();
+}
+
+int bike_controls_remote_button_key(int sdl_button)
+{
+	if (!bike_controls_remote())
+		return 0;
+	if (sdl_button == SDL_BUTTON_LEFT)
+		return SDL_SCANCODE_RETURN;
+	if (sdl_button == SDL_BUTTON_RIGHT)
+		return SDL_SCANCODE_ESCAPE;
+	return -1;
+}
+
+static int scale_axis(int d, int *rem)
+{
+	const long v = (long)d * (long)bike_settings.pointer_sens_pct + *rem;
+
+	*rem = (int)(v % 100);
+	return (int)(v / 100);
+}
+
+void bike_controls_pointer(int *dx, int *dy)
+{
+	*dx += inj_move_x + inj_drive_x;
+	*dy += inj_move_y + inj_drive_y;
+	inj_move_x = inj_move_y = 0;
+	if (bike_settings.pointer_sens_pct != 100)
+	{
+		*dx = scale_axis(*dx, &rem_x);
+		*dy = scale_axis(*dy, &rem_y);
+	}
+	moved_units += (unsigned long)(abs(*dx) + abs(*dy));
+}
+
+void bike_controls_air_buttons(uint8_t buttons_down, bool button[4])
+{
+	const uint8_t down = (uint8_t)(buttons_down | inj_buttons);
+
+	if (down & SDL_BUTTON_LMASK)
+		button[0] = true;
+	mouse_buttons_to_player((uint8_t)(down & SDL_BUTTON_MMASK), button);
+}
+
+static bool media_down(int which)
+{
+	static const int keys[MEDIA_COUNT][2] =
+	{
+		{ SDL_SCANCODE_MEDIA_PLAY_PAUSE, SDL_SCANCODE_MEDIA_PLAY },
+		{ SDL_SCANCODE_MEDIA_NEXT_TRACK, SDL_SCANCODE_MEDIA_NEXT_TRACK },
+		{ SDL_SCANCODE_MEDIA_PREVIOUS_TRACK, SDL_SCANCODE_MEDIA_PREVIOUS_TRACK },
+	};
+
+	return inj_media[which] || keysactive[keys[which][0]] || keysactive[keys[which][1]] ||
+	       (which == MEDIA_PLAY_PAUSE && keysactive[SDL_SCANCODE_MEDIA_PAUSE]);
+}
+
+void bike_controls_media_buttons(bool button[4])
+{
+	if (media_down(MEDIA_NEXT))
+	{
+		button[3] = true;
+		++media_presses;
+	}
+	if (media_down(MEDIA_PREV))
+	{
+		button[1] = button[2] = true;
+		++media_presses;
+	}
+}
+
+/* Per level-loop pass: right click -> in-game menu, play/pause -> pause.  Each
+ * fires on a press only after the input was seen released, so the click or key
+ * that closes the menu or resumes the pause cannot reopen it. */
+static void remote_frame(void)
+{
+	bool right, pp;
+
+	if (!bike_controls_air_play())
+	{
+		right_armed = pause_armed = false;
+		return;
+	}
+	right = ((mouseButtonsDown | inj_buttons) & SDL_BUTTON_RMASK) != 0;
+	pp = media_down(MEDIA_PLAY_PAUSE);
+	if (!right)
+		right_armed = true;
+	else if (right_armed)
+	{
+		right_armed = false;
+		ingamemenu_pressed = true;
+		++menu_opens;
+	}
+	if (!pp)
+		pause_armed = true;
+	else if (pause_armed)
+	{
+		pause_armed = false;
+		pause_pressed = true;
+		++pauses;
+	}
+}
 
 static bool available(void)
 {
@@ -98,6 +220,41 @@ static void apply_event(const InjectedEvent *e)
 		if (available() && latch)
 			bike_controls_toggle();
 		break;
+	case EV_MOUSE_MOVE:
+	case EV_MOUSE_DRIVE:
+	{
+		int x = 0, y = 0;
+
+		if (sscanf(e->arg, "%d,%d", &x, &y) != 2)
+			break;
+		if (e->kind == EV_MOUSE_MOVE)
+		{
+			inj_move_x += x;
+			inj_move_y += y;
+		}
+		else
+		{
+			inj_drive_x = x;
+			inj_drive_y = y;
+		}
+		break;
+	}
+	case EV_MOUSE_DOWN:
+	case EV_MOUSE_UP:
+	{
+		const uint8_t m = e->arg[0] == 'r' ? SDL_BUTTON_RMASK : e->arg[0] == 'm' ? SDL_BUTTON_MMASK : SDL_BUTTON_LMASK;
+
+		inj_buttons = e->kind == EV_MOUSE_DOWN ? (uint8_t)(inj_buttons | m) : (uint8_t)(inj_buttons & ~m);
+		break;
+	}
+	case EV_KEY_DOWN:
+	case EV_KEY_UP:
+	{
+		const int w = strcmp(e->arg, "next") == 0 ? MEDIA_NEXT : strcmp(e->arg, "prev") == 0 ? MEDIA_PREV : MEDIA_PLAY_PAUSE;
+
+		inj_media[w] = e->kind == EV_KEY_DOWN;
+		break;
+	}
 	case EV_IMMORTAL: /* regress only: the engine's own invincibility flag, so the ship outlives the level */
 		youAreCheating = true;
 		break;
@@ -165,6 +322,8 @@ void bike_controls_frame(void)
 	while (event_next < event_count && events[event_next].tick <= tick)
 		apply_event(&events[event_next++]);
 
+	remote_frame();
+
 	if (!bike_settings.autofire)
 		latch = false;
 }
@@ -208,6 +367,7 @@ bool bike_autofire_held_back(void)
 void bike_controls_log_coverage(void)
 {
 	logInfo("Bike autofire: toggles=%lu fired=%lu held=%lu", toggles, fired_frames, held_frames);
+	logInfo("Bike air: moved=%lu menu_opens=%lu pauses=%lu media=%lu", moved_units, menu_opens, pauses, media_presses);
 }
 
 bool bike_controls_events_load(const char *path)
@@ -258,6 +418,14 @@ bool bike_controls_events_load(const char *path)
 		else if (strcmp(act, "immortal") == 0) e.kind = EV_IMMORTAL;
 		else if (strcmp(act, "fire_on") == 0) e.kind = EV_FIRE_ON;
 		else if (strcmp(act, "fire_off") == 0) e.kind = EV_FIRE_OFF;
+		else if (rest != NULL && strlen(rest) < sizeof e.arg &&
+		         ((strcmp(act, "mouse_move") == 0 && (e.kind = EV_MOUSE_MOVE, true)) ||
+		          (strcmp(act, "mouse_drive") == 0 && (e.kind = EV_MOUSE_DRIVE, true)) ||
+		          (strcmp(act, "mouse_down") == 0 && (e.kind = EV_MOUSE_DOWN, true)) ||
+		          (strcmp(act, "mouse_up") == 0 && (e.kind = EV_MOUSE_UP, true)) ||
+		          (strcmp(act, "key_down") == 0 && (e.kind = EV_KEY_DOWN, true)) ||
+		          (strcmp(act, "key_up") == 0 && (e.kind = EV_KEY_UP, true))))
+			strcpy(e.arg, rest);
 		else if ((strcmp(act, "set") == 0 || strcmp(act, "equip") == 0) && rest != NULL && strlen(rest) < sizeof e.arg)
 		{
 			e.kind = strcmp(act, "set") == 0 ? EV_SET : EV_EQUIP;

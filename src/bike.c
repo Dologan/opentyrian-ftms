@@ -402,8 +402,8 @@ void bike_shutdown(void)
 	{
 		bike_rules_log_coverage();
 		bike_controls_log_coverage();
-		logInfo("Bike end state: shield=%u superbombs=%u power=%u", (unsigned)player[0].shield,
-		        (unsigned)player[0].superbombs, (unsigned)power);
+		logInfo("Bike end state: shield=%u superbombs=%u power=%u x=%d y=%d", (unsigned)player[0].shield,
+		        (unsigned)player[0].superbombs, (unsigned)power, (int)player[0].x, (int)player[0].y);
 	}
 	bike_controls_shutdown();
 	if (log_file != NULL)

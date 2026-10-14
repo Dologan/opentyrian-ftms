@@ -1,0 +1,4 @@
+# immortal ship with sidekicks, no pointer input: the baseline for the air-mouse cases
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1

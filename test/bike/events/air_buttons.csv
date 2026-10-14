@@ -1,0 +1,11 @@
+# air mouse buttons and media keys in play: OK (left) holds fire, next changes the
+# rear fire mode, previous fires both sidekicks
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+50,mouse_down,l
+200,mouse_up,l
+250,key_down,next
+260,key_up,next
+300,key_down,prev
+320,key_up,prev
