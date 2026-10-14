@@ -70,6 +70,7 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
 
 - **Guards run by `make regress`:**
   - `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_bike_effort.sh`, `check_bike.sh` (`make regress-bike`; bike core, digests in `test/bike/regress.txt`);
+  - **Vendored Flywheel files** (`test/bike/feeds`, `test/bike/golden` except `c_digests.txt`, `test/bike/protocol/tolerance`, `tools/bike/trace_to_feed.py`) are Flywheel's: never edit them here. `check_bike_effort.sh` verifies them against `test/bike/VENDORED_FROM`; change Flywheel, then `python3 -I tools/bike/vendor.py sync <flywheel checkout>`. `check_bike_ws.sh` (local only) also runs the tolerance fixtures through the bridge client.
   - `check_installer.sh` (synthetic zips plus `tools/curl_stub.c` named by absolute path in a test spec; it can never reach the network);
   - `check_final_regression.sh` (the §7 matrix: data-open audit, save namespaces, UI save/load, bosses, pause, gamepad, launcher handoff);
   - `check_display.sh` (runtime display changes, modal centring, launcher first frame).

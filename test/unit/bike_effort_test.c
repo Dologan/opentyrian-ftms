@@ -1,9 +1,9 @@
 /*
  * Unit test of the fixed-point effort engine (src/bike_effort.c) and the feed
  * reader (src/bike_feed.c) against golden output produced by Flywheel's real
- * TypeScript EffortEngine (tools/bike/golden/gen_effort_golden.mjs, outputs in
- * test/bike/golden).  Built and run by tools/check_bike_effort.sh; needs no SDL
- * and no game data.
+ * TypeScript EffortEngine (Flywheel's shared/conformance/effort/gen_golden.mjs; the
+ * outputs are vendored in test/bike/golden, see test/bike/VENDORED_FROM).  Built
+ * and run by tools/check_bike_effort.sh; needs no SDL and no game data.
  *
  * usage: bike_effort_test REPO_ROOT [--update-digests]
  *

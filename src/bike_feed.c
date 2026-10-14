@@ -2,8 +2,8 @@
  * bike_feed.c - scripted bike telemetry feeds.
  *
  * New code for the exercise-bike integration; the feed format is shared with the
- * golden-fixture generator (tools/bike/golden/gen_effort_golden.mjs) from
- * Flywheel (MIT) so both read the same CSVs.
+ * golden-data generator in Flywheel (shared/conformance/effort/gen_golden.mjs,
+ * MIT) so both read the same CSVs.
  */
 #include "bike_feed.h"
 
