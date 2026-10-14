@@ -299,3 +299,21 @@ The controls work (Phase 3b) needs T2.4 (settings) and T2.5 (menu framework) fir
 - Native BLE (route B), the sidecar (route C) and the browser build (route D).
 - Pointing `master` at the new history: this needs your explicit OK, since it rewrites the default branch.
 - Opening a PR: only if you ask.
+
+## Status (2026-10-14, end of session)
+
+Every task in this plan is done, merged and pushed.
+- CI is green on Linux, macOS and Windows at `5c8249c`.
+- Locally, the full regress suite passes 207/207, `tools/check_bike.sh` passes (57 digests), and `tools/check_bike_bridge.sh` passes against the Flywheel replay bridge.
+
+What needs the Surface + Q200B:
+- **Input probe:** run `--input-probe` and record the results in `doc/ftms/controls-probe.md`.
+- **Playtest:** follow `doc/ftms/playtest-checklist.md` with `--ftms-log`.
+- **Tuning:** the mapping C constants, the surge frequency (this is Flywheel's own tuning), the touch drag gain, and the auto-fire toggle keys.
+
+Open, low priority:
+- Regress-only flags are accepted in normal play.
+- The launcher ignores the touch exclusion.
+- There is no letter picker for name entry.
+- There is no confirmation on the in-game Quit.
+- Pointer smoothing (one-euro) was not ported.
