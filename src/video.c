@@ -518,9 +518,9 @@ void JE_clr256(SDL_Surface *screen)
 		modern_backdrop_clear();
 }
 
-void JE_showVGA(void) 
-{ 
-	scale_and_flip(VGAScreen); 
+void JE_showVGA(void)
+{
+	scale_and_flip(VGAScreen);
 }
 
 SDL_Renderer *video_renderer(void)

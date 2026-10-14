@@ -357,8 +357,6 @@ void handleSdlEvents(void)
 				mouseY = (Sint32)ev.motion.y;
 				mapWindowPointToScreen(&mouseX, &mouseY);
 
-				mouseHasMotionInput = true;
-
 				if (mouseRelativeEnabled && windowHasFocus)
 				{
 					mouseWindowXRelative += (Sint32)ev.motion.xrel;
@@ -373,7 +371,11 @@ void handleSdlEvents(void)
 					SDL_HideCursor();
 
 				if (ev.motion.xrel != 0 || ev.motion.yrel != 0)
+				{
+					mouseHasMotionInput = true;
+
 					mouseInactive = false;
+				}
 				break;
 
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
