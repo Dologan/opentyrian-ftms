@@ -283,6 +283,11 @@ if guard_selected check_game_rules.sh && ! "$ROOT/tools/check_game_rules.sh" "$B
 	exit 1
 fi
 
+if guard_selected check_bike_effort.sh && ! "$ROOT/tools/check_bike_effort.sh"; then
+	echo "ERROR: bike-effort checks failed"
+	exit 1
+fi
+
 if guard_selected check_installer.sh && ! "$ROOT/tools/check_installer.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/installer"; then
 	echo "ERROR: Tyrian 2000 installer checks failed"
 	exit 1
