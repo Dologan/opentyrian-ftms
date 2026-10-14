@@ -3,6 +3,8 @@
  * sockets, needs SDL3 + SDL3_net).  Driven by tools/check_bike_ws.sh.
  *
  *   bike_ws_test fake                    protocol cases against an in-process fake WebSocket server
+ *   bike_ws_test rider DIR               the shared 'rider' fixtures (test/bike/protocol/rider): the
+ *                                        bridge's active rider and FTP, parsed into the mailbox
  *   bike_ws_test tolerance DIR           the shared protocol tolerance fixtures (test/bike/protocol/tolerance)
  *                                        through the fake server: a conforming consumer ignores unknown
  *                                        keys, types and enum values (flywheel docs/protocol.md)
@@ -271,7 +273,7 @@ static void run_fake(void)
 	CHECK(bike_ws_open("127.0.0.1", lport), "reopen");
 	CHECK(pump_until(c_open, 3000), "handshake completes (state=%s)", bike_ws_state_name(bike_ws_state()));
 	op = srv_read_frame(pl, sizeof pl, &plen);
-	CHECK(op == 1 && strcmp(pl, "{\"type\":\"hello\",\"client\":\"game\",\"v\":1}") == 0, "hello frame, got op=%d '%s'", op, pl);
+	CHECK(op == 1 && strcmp(pl, "{\"type\":\"hello\",\"client\":\"game\",\"v\":1,\"caps\":[\"rider\"]}") == 0, "hello frame, got op=%d '%s'", op, pl);
 	CHECK(mb.link == BIKE_LINK_WAITING, "open without status or telemetry is WAITING (%d)", mb.link);
 
 	/* status handling */
@@ -578,6 +580,11 @@ static void run_live(const char *host, uint16_t port, const char *sigfile)
 	printf("  first sample: seq=%u power=%d.%03d valid=%d cadence=%d.%03d valid=%d\n", (unsigned)mb.latest.seq,
 	       q16_milli(mb.latest.power_w) / 1000, q16_milli(mb.latest.power_w) % 1000, mb.latest.power_valid,
 	       q16_milli(mb.latest.cadence_rpm) / 1000, q16_milli(mb.latest.cadence_rpm) % 1000, mb.latest.cadence_valid);
+	/* The script starts the bridge with a rider profile (Ann, 230 W, measured on the Q200B) and
+	 * --rider ann: our hello asked for "rider", so the real bridge must have announced her. */
+	CHECK(mb.rider.valid && mb.rider.ftp_w == 230 && strcmp(mb.rider.name, "Ann") == 0 && strcmp(mb.rider.id, "ann") == 0,
+	      "the real bridge announced its active rider (valid=%d ftp=%u name='%s')", mb.rider.valid, (unsigned)mb.rider.ftp_w, mb.rider.name);
+	CHECK(strcmp(mb.rider.source, "test") == 0 && strcmp(mb.rider.bike, "Q200B") == 0, "rider source '%s' and bike '%s'", mb.rider.source, mb.rider.bike);
 	l_seq_mark = mb.latest.seq;
 	CHECK(wait_for(l_newer, 3000), "seq advances");
 	seq_a = mb.latest.seq;
@@ -800,6 +807,87 @@ static void run_tolerance(const char *dir)
 	bike_ws_close();
 }
 
+static void send_and_settle(const char *json)
+{
+	srv_send_frame(0x1, true, json);
+	pump_ms(30);
+}
+
+static void run_rider(const char *dir)
+{
+	TolRow rows[64];
+	char pl[256], val[64];
+	int n, i, plen, op;
+
+	printf("shared rider fixtures (%s)\n", dir);
+	n = tol_load_manifest(dir, rows, 64);
+	CHECK(n > 0, "manifest.txt readable and non-empty (%d)", n);
+	if (n <= 0)
+		return;
+
+	srv_listen();
+	CHECK(bike_ws_open("127.0.0.1", lport), "open");
+	CHECK(pump_until(c_open, 3000), "handshake completes");
+	op = srv_read_frame(pl, sizeof pl, &plen);
+	CHECK(op == 1 && strstr(pl, "\"caps\":[\"rider\"]") != NULL, "hello asks for the rider capability, got '%s'", pl);
+
+	/* An older bridge never sends a rider: the client plays on with its own FTP. */
+	send_and_settle("{\"type\":\"status\",\"state\":\"streaming\"}");
+	CHECK(!mb.rider.valid && mb.link == BIKE_LINK_STREAMING, "no rider message, no rider (the manual FTP stays)");
+
+	for (i = 0; i < n; ++i)
+	{
+		char *msg = tol_message(dir, &rows[i]);
+
+		CHECK(msg != NULL, "%s readable", rows[i].file);
+		if (msg == NULL)
+			continue;
+		if (strcmp(rows[i].kind, "rider") == 0)
+		{
+			send_and_settle(msg);
+			CHECK(mb.rider.valid, "%s: a rider with an FTP is stored", rows[i].file);
+			if (tol_get(&rows[i], "id", val, sizeof val))
+				CHECK(strcmp(mb.rider.id, val) == 0, "%s: id '%s', got '%s'", rows[i].file, val, mb.rider.id);
+			if (tol_get(&rows[i], "name", val, sizeof val))
+				CHECK(strcmp(mb.rider.name, val) == 0, "%s: name '%s', got '%s'", rows[i].file, val, mb.rider.name);
+			if (tol_get(&rows[i], "ftpClamped", val, sizeof val))
+				CHECK(mb.rider.ftp_w == (uint16_t)atoi(val), "%s: FTP %s, got %u", rows[i].file, val, (unsigned)mb.rider.ftp_w);
+			if (tol_get(&rows[i], "source", val, sizeof val))
+				CHECK(strcmp(mb.rider.source, val) == 0, "%s: source '%s', got '%s'", rows[i].file, val, mb.rider.source);
+			else
+				CHECK(mb.rider.source[0] == '\0', "%s: no source was sent, got '%s'", rows[i].file, mb.rider.source);
+			if (strcmp(rows[i].file, "rider-basic.json") == 0 || strcmp(rows[i].file, "rider-decoys.json") == 0)
+				CHECK(strcmp(mb.rider.bike, "Q200B") == 0, "%s: bike 'Q200B', got '%s'", rows[i].file, mb.rider.bike);
+			else
+				CHECK(mb.rider.bike[0] == '\0', "%s: no bike was sent, got '%s'", rows[i].file, mb.rider.bike);
+		}
+		else
+		{
+			/* a message with no usable FTP for the rider already in use leaves that FTP alone */
+			send_and_settle("{\"type\":\"rider\",\"id\":\"ann\",\"name\":\"Ann\",\"ftpW\":200}");
+			CHECK(mb.rider.valid && mb.rider.ftp_w == 200, "%s: primed with 200 W", rows[i].file);
+			send_and_settle(msg);
+			CHECK(mb.rider.valid && mb.rider.ftp_w == 200 && strcmp(mb.rider.id, "ann") == 0,
+			      "%s: no usable FTP keeps the one in use (valid=%d ftp=%u)", rows[i].file, mb.rider.valid, (unsigned)mb.rider.ftp_w);
+		}
+		free(msg);
+		CHECK(bike_ws_state() == BIKE_WS_OPEN, "%s: link still open", rows[i].file);
+	}
+
+	/* A different rider without an FTP: the previous rider's FTP is not theirs. */
+	send_and_settle("{\"type\":\"rider\",\"id\":\"ann\",\"name\":\"Ann\",\"ftpW\":210}");
+	send_and_settle("{\"type\":\"rider\",\"id\":\"bo\",\"name\":\"Bo\",\"ftpW\":null}");
+	CHECK(!mb.rider.valid, "another rider with no FTP drops the old FTP");
+	send_and_settle("{\"type\":\"rider\",\"id\":\"bo\",\"name\":\"Bo\",\"ftpW\":150}");
+	CHECK(mb.rider.valid && mb.rider.ftp_w == 150 && strcmp(mb.rider.name, "Bo") == 0, "the next rider with an FTP is stored");
+
+	/* Riders are not samples, and telemetry still works alongside them. */
+	CHECK(!mb.has_sample, "a rider message never creates a sample");
+	expect_sample("{\"type\":\"telemetry\",\"v\":1,\"seq\":1,\"powerW\":120,\"cadenceRpm\":70}", mb.latest.seq);
+	CHECK(pump_until(c_newseq, 500) && mb.has_sample && mb.rider.ftp_w == 150, "telemetry after a rider");
+	bike_ws_close();
+}
+
 int main(int argc, char **argv)
 {
 	signal(SIGPIPE, SIG_IGN);
@@ -807,6 +895,8 @@ int main(int argc, char **argv)
 		run_fake();
 	else if (argc >= 3 && strcmp(argv[1], "tolerance") == 0)
 		run_tolerance(argv[2]);
+	else if (argc >= 3 && strcmp(argv[1], "rider") == 0)
+		run_rider(argv[2]);
 	else if (argc >= 4 && strcmp(argv[1], "blackhole") == 0)
 		run_blackhole(argv[2], (uint16_t)atoi(argv[3]));
 	else if (argc >= 3 && strcmp(argv[1], "refused") == 0)
@@ -815,7 +905,7 @@ int main(int argc, char **argv)
 		run_live(argv[2], (uint16_t)atoi(argv[3]), argc >= 5 ? argv[4] : NULL);
 	else
 	{
-		fprintf(stderr, "usage: %s fake | tolerance DIR | blackhole HOST PORT | refused PORT | live HOST PORT [SIGFILE]\n", argv[0]);
+		fprintf(stderr, "usage: %s fake | tolerance DIR | rider DIR | blackhole HOST PORT | refused PORT | live HOST PORT [SIGFILE]\n", argv[0]);
 		return 2;
 	}
 	printf("%s: %d checks, %d failed\n", argv[1], checks, failures);

@@ -140,7 +140,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `surge_superbomb`, `surge_sidekick`, `surge_special`, `surge_shield`
   - `autofire` (`off`|`toggle`), `autofire_reserve` (0|25|50), `autofire_key`, `autofire_key2` (SDL scancode names; defaults `A` and `Application`, i.e. the remote's Menu key, pending the T3b.0 probe)
   - `air_mouse`, `pointer_sensitivity`, `touch`, `remote_buttons` (independent: menu translation no longer needs Air Mouse; `pointer_smoothing` was never implemented and is retired: old configs still load, a config with Air Mouse on and no `remote_buttons` key loads with Remote Buttons on)
-  - `ftp`, `floor`, `bias`, `strength` (gain), `cap`
+  - `ftp`, `ftp_source` (`auto` | `manual`, see §3a), `floor`, `bias`, `strength` (gain), `cap`
   - `superbomb_cooldown` (seconds, 0-600, default 60; 0 lifts the rate limit; not in the menu)
   - `bridge_host`, `bridge_port`
 - **CLI ids 440–459** (add to the AGENTS table). No name may be a prefix of another. `check_bike.sh` scans `params.c` for prefix pairs.
@@ -151,7 +151,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   | 441 | `--regress-bike-log=FILE` | 451 | `--ftms-ftp=W` |
   | 442 | `--regress-bike-set=K=V[,K=V…]` | 452 | `--ftms-off` (forces master off for this run) |
   | 443 | `--regress-bike-events=FILE` | 453 | `--ftms-log=FILE` (T5.2) |
-  | 444–449 | reserved | 454 | `--input-probe` (T3b.0); 455 `--ftms-test-level=E:L` (T4.2, local bridge check only); 456–459 reserved |
+  | 444–449 | reserved | 454 | `--input-probe` (T3b.0); 455 `--ftms-test-level=E:L` (T4.2, local bridge check only); 456 `--regress-bike-rider=FTP[:NAME]` (regress only: pretend the bridge announced a rider); 457–459 reserved |
 
 - **Regress pin**: next to `regress.c:1356`, call `bike_settings_default()` and force `master = 0`. Then apply `--regress-bike-set`. `--regress-bike-feed` implies `master = 1, generator = 1`. Set `bike_settings_pinned`, which makes `bike_config_save()` leave `[ftms]` untouched.
 - **Menus**: `SETUP_MENU_BIKE = 4` (`opentyr.h:68`, `opentyr.c:283`).
@@ -160,6 +160,18 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - Surge and Controls are child menus.
   - Mid-game: add a C-string "Bike..." row to `JE_inGameSetup` (`mainint.c:1514`). It is hidden when `isNetworkGame` and calls `setupMenu()` with `setup_menu_start = SETUP_MENU_BIKE`.
   - Changes take effect on the next `bike_frame_tick()`, because nothing is cached.
+
+### 3a. FTP from the bridge
+
+FTP is the rider's *best even 8 minute power x 0.9, in this bike's own watts* (Flywheel `docs/ftp.md`).
+The bridge keeps riders and calibrates their FTP, so the game asks for it instead of owning a test.
+
+- `bike_ws.c` sends `"caps":["rider"]` in its hello. A bridge that grants it sends `{"type":"rider","id","name","ftpW",...}` right after its `welcome`, and again when the rider or their FTP changes. A bridge without capabilities ignores the key and never sends one: the game keeps its typed value.
+- The message is parsed into `BikeMailbox.rider` (whole watts, clamped to 50..500, name cleaned to ASCII). A message without a usable FTP keeps the FTP in use unless it names a different rider. Shared fixtures with expected results are vendored in `test/bike/protocol/rider/` and run by `check_bike_ws.sh rider`.
+- **Precedence** (`bike_ftp_w()`): `--ftms-ftp` beats the bridge value (when `ftp_source = auto`, the default), which beats the typed value (`ftp`, edited in the menu). `ftp_source = manual` ignores the bridge.
+- **Timing**: the bridge value is copied at level start and whenever no level is running (`bike_service`), never mid-level, because the effort config is rebuilt the moment the FTP changes and effort would jump. Manual edits still apply at once.
+- The bridge value is never written to `[ftms]`: `ftp` keeps the typed value. The Bike menu shows `230 W Ann` while it is in force (the stepper is then read-only; set FTP Source to Manual to type one), and says when a new bridge value waits for the next level.
+- Regress: scripted feeds never use the bridge, `bike_regress_pin` forces `manual`, and `check_bike.sh` (`bike-ftp-source`) proves a bridge FTP is byte-identical to typing the same number, that Manual and `--ftms-ftp` win, and that a rider announced mid-level changes nothing (`--regress-bike-rider`, the `rider` event).
 
 ## 4. Frame hooks, gate and determinism
 

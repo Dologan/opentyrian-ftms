@@ -34,6 +34,7 @@ typedef enum
 	ROW_POWER,
 	ROW_BRIDGE,
 	ROW_FTP,
+	ROW_FTP_SRC,
 	ROW_STRENGTH,
 	ROW_FLOOR,
 	ROW_SUPERBOMB,
@@ -62,7 +63,8 @@ static const RowInfo rows[ROW_COUNT] = {
 	[ROW_MASTER]    = { "Bike and Controls:", "Master switch. Off keeps the game stock." },
 	[ROW_POWER]     = { "Bike Power:", "Pedal power fills the generator." },
 	[ROW_BRIDGE]    = { "Bridge:", "Flywheel bridge address. Enter to edit." },
-	[ROW_FTP]       = { "FTP:", "Your 1 hour power in watts. Hold left/right." },
+	[ROW_FTP]       = { "FTP:", "Best even 8 minute power x 0.9. Hold left/right." },
+	[ROW_FTP_SRC]   = { "FTP Source:", "Bridge uses your Flywheel FTP, Manual your own." },
 	[ROW_STRENGTH]  = { "Strength:", "How hard riding pays. 100% is stock power." },
 	[ROW_FLOOR]     = { "Floor:", "Power units per frame while coasting." },
 	[ROW_SUPERBOMB] = { "Surge Superbomb:", "A superbomb for an overdrive surge." },
@@ -104,6 +106,21 @@ static const char *row_help(RowId id)
 {
 	if (id == ROW_TOUCH && bike_settings.touch && !bike_settings.autofire)
 		return "Touch fires via Auto-fire: set it to Toggle.";
+	if (id == ROW_FTP || id == ROW_FTP_SRC)
+	{
+		static char help[64];
+		BikeFtpInfo info;
+
+		bike_ftp_info(&info);
+		if (info.from_bridge)
+		{
+			snprintf(help, sizeof help, "From Flywheel: %.10s%s%.6s%s. Source Manual to edit.", info.rider,
+			         info.source[0] != '\0' ? " (" : "", info.source, info.source[0] != '\0' ? ")" : "");
+			return help;
+		}
+		if (info.pending)
+			return "The bridge has a new FTP. It applies next level.";
+	}
 	return rows[id].help;
 }
 
@@ -115,6 +132,7 @@ static bool *bool_field(RowId id)
 
 	switch (id)
 	{
+		case ROW_FTP_SRC: return &s->ftp_auto;
 		case ROW_MASTER: return &s->master;
 		case ROW_POWER: return &s->generator;
 		case ROW_SUPERBOMB: return &s->surge_superbomb;
@@ -146,14 +164,24 @@ static void row_value(RowId id, char *out, size_t cap)
 	const bool *b = bool_field(id);
 
 	out[0] = '\0';
-	if (id == ROW_AUTOFIRE)
+	if (id == ROW_FTP_SRC)
+		snprintf(out, cap, "%s", s->ftp_auto ? "Bridge" : "Manual");
+	else if (id == ROW_AUTOFIRE)
 		snprintf(out, cap, "%s", s->autofire ? "Toggle" : "Off");
 	else if (b != NULL)
 		snprintf(out, cap, "%s", *b ? "On" : "Off");
 	else if (id == ROW_BRIDGE)
 		bridge_text(out, cap);
 	else if (id == ROW_FTP)
-		snprintf(out, cap, "%u W", (unsigned)s->ftp_w);
+	{
+		BikeFtpInfo info;
+
+		bike_ftp_info(&info);
+		if (info.from_bridge)
+			snprintf(out, cap, "%u W %.10s", info.watts, info.rider);
+		else
+			snprintf(out, cap, "%u W", (unsigned)s->ftp_w);
+	}
 	else if (id == ROW_STRENGTH)
 		snprintf(out, cap, "%u%%", (unsigned)s->gain_pct);
 	else if (id == ROW_FLOOR)
@@ -175,7 +203,13 @@ static void row_adjust(RowId id, int dir, int mult)
 	if (b != NULL)
 		*b = !*b;
 	else if (id == ROW_FTP)
-		s->ftp_w = (uint16_t)clamp_int((int)s->ftp_w + dir * FTP_UNIT * mult, FTP_MIN, FTP_MAX);
+	{
+		BikeFtpInfo info;
+
+		bike_ftp_info(&info);
+		if (!info.from_bridge) /* the bridge's value is not edited here: switch the source to Manual */
+			s->ftp_w = (uint16_t)clamp_int((int)s->ftp_w + dir * FTP_UNIT * mult, FTP_MIN, FTP_MAX);
+	}
 	else if (id == ROW_STRENGTH)
 		s->gain_pct = (uint16_t)clamp_int((int)s->gain_pct + dir * STRENGTH_UNIT * mult, 0, STRENGTH_MAX);
 	else if (id == ROW_FLOOR)

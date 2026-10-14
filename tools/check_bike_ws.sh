@@ -7,6 +7,7 @@
 #   tools/check_bike_ws.sh [fake|blackhole|refused|live ...]   (default: all)
 #
 #   fake       protocol cases against an in-process fake server (no network)
+#   rider      the shared 'rider' fixtures (test/bike/protocol/rider): the bridge's active rider and FTP
 #   tolerance  the shared protocol tolerance fixtures (test/bike/protocol/tolerance,
 #              vendored from Flywheel's shared/protocol/fixtures/tolerance) through the same fake server
 #   blackhole  10.255.255.1: the poll loop must keep ticking, no call blocks
@@ -44,7 +45,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 start_bridge() {
-	(cd "$FLYWHEEL_DIR/bridge" && exec "$UV" run flywheel-bridge run --source sim --no-record \
+	# a rider for the bridge to announce (the live test checks the C client received it)
+	mkdir -p "$WORK/data/profiles"
+	printf '%s\n' '{"id":"ann","name":"Ann","ftpW":230,"ftpSource":"test","ftpUpdatedAt":"2026-10-14T10:00:00Z","ftpBike":{"id":"AA:BB","name":"Q200B"}}' \
+		> "$WORK/data/profiles/ann.json"
+	(cd "$FLYWHEEL_DIR/bridge" && exec "$UV" run flywheel-bridge run --source sim --no-record --rider ann \
 		--port "$PORT" --data-dir "$WORK/data") >> "$WORK/bridge.log" 2>&1 &
 	BRIDGE_PID=$!
 	i=0
@@ -70,7 +75,7 @@ if ! "$CC" -std=gnu99 -Wall -Wextra -O1 -DWITH_NETWORK -DTARGET_UNIX \
 	exit 1
 fi
 
-[ $# -eq 0 ] && set -- fake tolerance blackhole refused live
+[ $# -eq 0 ] && set -- fake tolerance rider blackhole refused live
 rc=0
 for t in "$@"; do
 	case "$t" in
@@ -79,6 +84,9 @@ for t in "$@"; do
 		;;
 	tolerance)
 		"$WORK/bike_ws_test" tolerance "$ROOT/test/bike/protocol/tolerance" || rc=1
+		;;
+	rider)
+		"$WORK/bike_ws_test" rider "$ROOT/test/bike/protocol/rider" || rc=1
 		;;
 	blackhole)
 		"$WORK/bike_ws_test" blackhole "$BLACKHOLE_HOST" 8787 || rc=1

@@ -1,0 +1,3 @@
+# the bridge announces a new rider FTP mid-level: it must wait for the next level
+# tick,action,arg
+300,rider,300:Ann

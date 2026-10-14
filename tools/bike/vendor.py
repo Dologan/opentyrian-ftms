@@ -6,6 +6,7 @@ trace-to-feed converter. This repo keeps pinned copies so its tests need no Flyw
     flywheel/shared/conformance/effort/feeds/   ->  test/bike/feeds/
     flywheel/shared/conformance/effort/golden/  ->  test/bike/golden/   (c_digests.txt stays ours)
     flywheel/shared/protocol/fixtures/tolerance ->  test/bike/protocol/tolerance/
+    flywheel/shared/protocol/fixtures/rider     ->  test/bike/protocol/rider/
     flywheel/bridge/tools/trace_to_feed.py      ->  tools/bike/trace_to_feed.py
 
 usage:
@@ -36,6 +37,7 @@ MAP = [
     ("shared/conformance/effort/feeds", "test/bike/feeds", True),
     ("shared/conformance/effort/golden", "test/bike/golden", True),
     ("shared/protocol/fixtures/tolerance", "test/bike/protocol/tolerance", True),
+    ("shared/protocol/fixtures/rider", "test/bike/protocol/rider", True),
     ("bridge/tools/trace_to_feed.py", "tools/bike/trace_to_feed.py", False),
 ]
 # Files inside a vendored directory that belong to this repo and are never touched.

@@ -145,6 +145,11 @@ Turn the bike on in **Setup → Bike...**, which is also in the in-game menu.
 The bridge options are `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W` and
 `--ftms-off`, if you prefer to start the bridge yourself.
 
+Your FTP (best even 8 minute power x 0.9, in this bike's own watts) comes from
+your Flywheel rider when the bridge has one: the Bike menu shows it beside
+FTP, and **FTP Source** switches between the bridge's value and one you type.
+`--ftms-ftp=W` beats both. A new bridge value applies from the next level.
+
 ## <img src="docs/readme/h-build.svg" alt="Build it" width="100%">
 
 Requires a C99 compiler, GNU make, pkg-config, SDL3 and optionally SDL3_net.

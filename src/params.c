@@ -171,6 +171,7 @@ const Options *JE_paramOptions(void)
 		{ 452, 0,   "ftms-off",          false },
 		{ 453, 0,   "ftms-log",          true },
 		{ 455, 0,   "ftms-test-level",   true },
+		{ 456, 0,   "regress-bike-rider", true },
 		
 		{ 0, 0, NULL, false }
 	};
@@ -350,6 +351,7 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-bike-log=FILE      Regress only: per-tick bike log");
 			logInfo("  --regress-bike-events=FILE   Regress only: injected bike events (tick,autofire_toggle|autofire_on|autofire_off|set,K=V)");
 			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
+			logInfo("  --regress-bike-rider=FTP[:NAME]  Regress only: pretend the bridge announced this rider");
 			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
 			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
 			logInfo("  --ftms-log=FILE              Write a per-second bike calibration CSV (watts, refill, power, shots) while playing");
@@ -971,6 +973,14 @@ void JE_paramCheck(int argc, char *argv[])
 
 		case 442: // --regress-bike-set=K=V[,K=V...]
 			regress_bike_set = option.arg;
+			break;
+
+		case 456: // --regress-bike-rider=FTP[:NAME]
+			if (!bike_regress_rider(option.arg))
+			{
+				logError("%s: --regress-bike-rider must be FTP or FTP:NAME", argv[0]);
+				exit(EXIT_FAILURE);
+			}
 			break;
 
 		case 450: // --ftms-bridge=HOST[:PORT]

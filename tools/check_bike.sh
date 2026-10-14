@@ -144,6 +144,28 @@ case_run ftp500 6500 "$FEEDS/ramp0_300.csv" --regress-bike-set=ftp=500,surge_sup
 cmp -s "$OUT/ftp50.blog" "$OUT/ftp500.blog" && fail ftp "FTP 50 and 500 produced the same log"
 echo "PASS bike-ftp-edges: 50 W saturates, 500 W stays low, deterministic"
 
+# --- FTP from the bridge (rider message): precedence and timing ------------------------------
+# The bridge's rider FTP must behave exactly like typing that number, and only when it should:
+#   source Bridge + a rider FTP    == the same number typed in (frames, state and log identical)
+#   source Manual + a rider FTP    == the typed value (the rider is ignored)
+#   --ftms-ftp given               == that value (the command line beats the bridge)
+#   a rider announced mid-level    == unchanged (an FTP change mid-level would make effort jump)
+RAMP="$FEEDS/ramp0_300.csv"
+case_run ftpm200 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=manual
+case_run ftpm250 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=250,ftp_source=manual
+case_run ftpm300 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=300,ftp_source=manual
+case_run ftpbr300 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=auto --regress-bike-rider=300:Ann
+case_run ftpman 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=manual --regress-bike-rider=300:Ann
+case_run ftpcli 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=250,ftp_source=auto --ftms-ftp=250 --regress-bike-rider=300:Ann
+case_run ftpmid 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=auto --regress-bike-events="$ROOT/test/bike/events/rider_mid.csv"
+same_run() { for x in f s blog; do cmp -s "$OUT/$1.$x" "$OUT/$2.$x" || fail ftp-source "$1 and $2 differ ($x): $3"; done; }
+cmp -s "$OUT/ftpm200.blog" "$OUT/ftpm300.blog" && fail ftp-source "FTP 200 and 300 give the same log, so the cases below prove nothing"
+same_run ftpbr300 ftpm300 "the bridge FTP is not the same as typing it"
+same_run ftpman ftpm200 "a manual source did not ignore the rider"
+same_run ftpcli ftpm250 "--ftms-ftp did not beat the bridge"
+same_run ftpmid ftpm200 "a rider announced mid-level changed the run"
+echo "PASS bike-ftp-source: bridge FTP == typed FTP; manual and --ftms-ftp win; a mid-level rider waits for the next level"
+
 case_run ride1 9000 "$FEEDS/q200b-ride1.csv" --regress-bike-set=surge_superbomb=0
 case_run ride2 12000 "$FEEDS/q200b-ride2.csv" --regress-bike-set=surge_superbomb=0
 cmp -s "$OUT/off12000.f" "$OUT/ride2.f" && fail ride2 "frames equal the stock run"
@@ -329,7 +351,15 @@ snap_screen snap-menu bike-menu
 snap_screen snap-menu-nav bike-menu-nav
 snap_screen snap-menu-edit bike-menu-edit
 cmp -s "$OUT/snap-menu.bmp" "$OUT/snap-menu-nav.bmp" && fail snap-menu "the key script did not change the menu"
-echo "PASS bike-menu-screens: Setup menu, stepper walk and address edit render and differ"
+# the same menu with a rider from the bridge in force: the FTP row shows its value and name
+SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-screen=bike-menu \
+	--regress-bike-set=enabled=1,surge_special=1,ftp_source=auto --regress-bike-rider=230:Ann --regress-frames=40 \
+	--regress-snapshot=30:"$(native_path "$OUT/snap-menu-rider.bmp")" >"$OUT/snap-menu-rider.log" 2>&1 \
+	|| fail snap-menu-rider "the screen run exited with $?"
+[ -s "$OUT/snap-menu-rider.bmp" ] || fail snap-menu-rider "no snapshot was written"
+SNAPS+=(snap-menu-rider)
+cmp -s "$OUT/snap-menu.bmp" "$OUT/snap-menu-rider.bmp" && fail snap-menu-rider "a bridge rider did not change the menu"
+echo "PASS bike-menu-screens: Setup menu, stepper walk, address edit and a bridge rider render and differ"
 
 # HUD on vs off: presentation only, so the state hashes must be identical.
 HUDARGS=(--regress-bike-feed=const:230,92 --regress-modern --regress-aspect=16:9)

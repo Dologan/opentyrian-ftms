@@ -26,7 +26,8 @@ typedef struct
 	int autofire_key, autofire_key2; /* SDL_Scancode values */
 	bool air_mouse, touch, remote_buttons; /* air_mouse: pointer steering in play; remote_buttons: menu OK/Back */
 	uint16_t pointer_sens_pct; /* 25..400 */
-	uint16_t ftp_w; /* 50..500, default 200 */
+	uint16_t ftp_w; /* 50..500, default 200: the value typed in (config, menu, --ftms-ftp) */
+	bool ftp_auto;  /* use the FTP the Flywheel bridge reports for its active rider, when it reports one */
 	uint16_t superbomb_cooldown_s; /* 0..600, default 60 (BIKE_SUPERBOMB_COOLDOWN_S) */
 	uint8_t floor; /* units per frame, default 8 */
 	uint16_t bias_pct, gain_pct, cap_pct; /* 50, 100 ("Strength"), 150 */
@@ -42,11 +43,26 @@ typedef struct
 	uint64_t arrival_us;
 } BikeSample;
 
+#define BIKE_FTP_MIN 50
+#define BIKE_FTP_MAX 500
+
+/* The bridge's active rider (the opt-in "rider" message): written by the transport, read by bike.c. */
+typedef struct
+{
+	bool valid;     /* an FTP has arrived */
+	uint16_t ftp_w; /* whole watts, clamped to BIKE_FTP_MIN..BIKE_FTP_MAX */
+	char id[48];
+	char name[32];   /* ASCII only: anything else became '?' */
+	char source[8];  /* "manual", "test", "ramp" or empty */
+	char bike[32];   /* the bike the FTP was measured on, or empty */
+} BikeRider;
+
 typedef struct
 {
 	BikeLink link;
 	bool has_sample;
 	BikeSample latest;
+	BikeRider rider;
 } BikeMailbox;
 
 typedef struct
@@ -99,6 +115,26 @@ bool bike_gate_open(void);
 bool bike_generator_on(void); /* gate && generator && source != OFF && a sample has arrived */
 BikeSource bike_source(void);
 const BikeHud *bike_hud(void);
+
+/* The FTP in force (watts), what bike_effort normalises effort by.  The typed-in value
+ * (bike_settings.ftp_w) unless ftp_auto is on, the bridge reported a rider's FTP, and no
+ * --ftms-ftp was given on the command line.  A bridge value is only picked up between levels
+ * (and at level start): changing FTP mid-level would make effort jump.  Manual edits apply at once. */
+unsigned bike_ftp_w(void);
+
+typedef struct
+{
+	bool from_bridge; /* bike_ftp_w() is the bridge's rider FTP */
+	bool pending;     /* the bridge now reports a different FTP; it applies from the next level */
+	unsigned watts;   /* bike_ftp_w() */
+	char rider[32];   /* the rider and how their FTP was set, when from_bridge */
+	char source[8];
+	char bike[32];
+} BikeFtpInfo;
+void bike_ftp_info(BikeFtpInfo *out);
+
+/* --regress-bike-rider / "rider" events: pretend the bridge announced a rider. "FTP[:NAME]". */
+bool bike_regress_rider(const char *spec);
 
 /* Menus and HUD (presentation only, read-only). */
 typedef struct
