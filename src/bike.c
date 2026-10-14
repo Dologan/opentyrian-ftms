@@ -7,6 +7,7 @@
  */
 #include "bike.h"
 
+#include "bike_controls.h"
 #include "bike_feed.h"
 #include "bike_ws.h"
 #include "bike_rules.h"
@@ -16,6 +17,7 @@
 #include "network.h"
 #include "nortsong.h"
 #include "params.h"
+#include "player.h"
 #include "regress.h"
 
 #include <SDL3/SDL.h>
@@ -396,6 +398,14 @@ void bike_init(void)
 void bike_shutdown(void)
 {
 	bike_ws_close();
+	if (bike_hash_active())
+	{
+		bike_rules_log_coverage();
+		bike_controls_log_coverage();
+		logInfo("Bike end state: shield=%u superbombs=%u power=%u", (unsigned)player[0].shield,
+		        (unsigned)player[0].superbombs, (unsigned)power);
+	}
+	bike_controls_shutdown();
 	if (log_file != NULL)
 	{
 		fclose(log_file);
@@ -547,6 +557,7 @@ void bike_frame_tick(void)
 		memset(&sig, 0, sizeof sig);
 
 	bike_rules_frame(&sig, link_up && have_sample, bike_generator_on(), last_dt_us);
+	bike_controls_frame();
 	gate_prev = gate;
 
 	memset(&hud, 0, sizeof hud);
@@ -559,6 +570,8 @@ void bike_frame_tick(void)
 	hud.effort_norm = sig.effort_norm;
 	hud.surge_meter = sig.surge_meter;
 	hud.surging = sig.surging;
+	hud.autofire_on = bike_autofire_active();
+	hud.autofire_held = bike_autofire_held_back();
 
 	++tick_count;
 }
@@ -575,6 +588,7 @@ uint64_t bike_state_digest(void)
 	uint64_t h = 14695981039346656037ull;
 	uint64_t v[8];
 	int i, b;
+	const bool controls = bike_controls_digest_active();
 
 	v[0] = bike_effort_digest(&eff_state);
 	v[1] = bike_rules_digest();
@@ -590,6 +604,17 @@ uint64_t bike_state_digest(void)
 			h ^= (v[i] >> (8 * b)) & 0xFF;
 			h *= 1099511628211ull;
 		}
+	/* folded only once auto-fire was used, so older digests stay byte-identical */
+	if (controls)
+	{
+		const uint64_t c = bike_controls_digest();
+
+		for (b = 0; b < 8; ++b)
+		{
+			h ^= (c >> (8 * b)) & 0xFF;
+			h *= 1099511628211ull;
+		}
+	}
 	return h;
 }
 
@@ -608,7 +633,7 @@ void bike_log_refill(unsigned add, unsigned power_after)
 	/* tick link moving surging effort_w_q16 norm_q16 income_q16 add power w_q16 af_on af_held events */
 	fprintf(log_file, "%lu %d %d %d %ld %ld %ld %u %u %ld %d %d %u\n", (unsigned long)(tick_count - 1),
 	        (int)hud.link, sig.moving ? 1 : 0, sig.surging ? 1 : 0, (long)sig.effort_w, (long)sig.effort_norm,
-	        (long)bike_rules_last_income(), add, power_after, (long)bike_rules_blend(), 0, 0,
+	        (long)bike_rules_last_income(), add, power_after, (long)bike_rules_blend(), bike_autofire_active() ? 1 : 0, bike_autofire_held_back() ? 1 : 0,
 	        (unsigned)sig.events);
 	++log_lines;
 }

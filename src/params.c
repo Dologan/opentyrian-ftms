@@ -21,6 +21,7 @@
 #include "arg_parse.h"
 #include "backgrnd.h"
 #include "bike.h"
+#include "bike_controls.h"
 #include "demo.h"
 #include "episodes.h"
 #include "file.h"
@@ -164,6 +165,7 @@ const Options *JE_paramOptions(void)
 		{ 440, 0,   "regress-bike-feed", true },
 		{ 441, 0,   "regress-bike-log",  true },
 		{ 442, 0,   "regress-bike-set",  true },
+		{ 443, 0,   "regress-bike-events", true },
 		{ 450, 0,   "ftms-bridge",       true },
 		{ 451, 0,   "ftms-ftp",          true },
 		{ 452, 0,   "ftms-off",          false },
@@ -344,6 +346,7 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-reverse-y          Regress only: force the reverse-controls smoothie on");
 			logInfo("  --regress-bike-feed=FILE|const:W[,RPM]  Regress only: scripted bike feed (tick,watts,cadence,connected)");
 			logInfo("  --regress-bike-log=FILE      Regress only: per-tick bike log");
+			logInfo("  --regress-bike-events=FILE   Regress only: injected bike events (tick,autofire_toggle|autofire_on|autofire_off|set,K=V)");
 			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
 			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
 			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
@@ -953,6 +956,11 @@ void JE_paramCheck(int argc, char *argv[])
 
 		case 441: // --regress-bike-log=FILE
 			bike_log_open(option.arg);
+			break;
+
+		case 443: // --regress-bike-events=FILE
+			if (!bike_controls_events_load(option.arg))
+				exit(EXIT_FAILURE);
 			break;
 
 		case 442: // --regress-bike-set=K=V[,K=V...]

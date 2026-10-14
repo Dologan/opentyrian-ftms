@@ -1164,7 +1164,7 @@ level_loop:
 			{
 				if (--shieldWait == 0)
 				{
-					shieldWait = 15;
+					shieldWait = bike_rules_shield_wait(15);
 
 					power -= shieldT;
 

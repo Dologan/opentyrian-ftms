@@ -19,6 +19,8 @@
 #include "mainint.h"
 
 #include "backgrnd.h"
+#include "bike_controls.h"
+#include "bike_rules.h"
 #include "config.h"
 #include "demo.h"
 #include "drawlist.h"
@@ -3768,6 +3770,14 @@ redo:
 						recordDemoKeys();
 				}
 
+				// Bike auto-fire (T3b.1): latched toggle with an energy reserve.
+				// Manual fire was OR-ed above, so the reserve never blocks it; the gate
+				// is closed for network, demo, 2P and arcade play.
+				if (playerNum_ == 1 && bike_controls_injected_fire())
+					button[0] = true; // regress-injected manual fire
+				if (playerNum_ == 1 && bike_controls_autofire(power))
+					button[0] = true;
+
 				// Reverse controls: a level event may have overwritten the
 				// smoothie, so the regress harness re-asserts it per tick.
 				if (regress_reverse_y)
@@ -4729,7 +4739,7 @@ redo:
 			{
 				if (this_player->sidekick[i].charge < this_option->pwr)
 					++this_player->sidekick[i].charge;
-				this_player->sidekick[i].charge_ticks = 20;
+				this_player->sidekick[i].charge_ticks = bike_rules_sidekick_charge_ticks(20);
 			}
 		}
 	}

@@ -80,6 +80,9 @@
     <ClCompile Include="..\src\bike_effort.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\bike_controls.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\bike_rules.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -352,6 +355,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\bike_effort.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\bike_controls.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\bike_rules.h">
