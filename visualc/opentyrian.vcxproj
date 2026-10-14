@@ -138,8 +138,10 @@
     <ClCompile Include="..\src\regress_flow.c" />
     <ClCompile Include="..\src\regress_rules.c" />
     <ClCompile Include="..\src\highscores.c" />
+    <ClCompile Include="..\src\bike.c" />
     <ClCompile Include="..\src\bike_effort.c" />
     <ClCompile Include="..\src\bike_feed.c" />
+    <ClCompile Include="..\src\bike_rules.c" />
     <ClCompile Include="..\src\game_rules.c" />
     <ClCompile Include="..\src\game_variant.c" />
     <ClCompile Include="..\src\file.c" />
@@ -228,8 +230,10 @@
     <ClInclude Include="..\src\regress_flow.h" />
     <ClInclude Include="..\src\regress_rules.h" />
     <ClInclude Include="..\src\highscores.h" />
+    <ClInclude Include="..\src\bike.h" />
     <ClInclude Include="..\src\bike_effort.h" />
     <ClInclude Include="..\src\bike_feed.h" />
+    <ClInclude Include="..\src\bike_rules.h" />
     <ClInclude Include="..\src\game_rules.h" />
     <ClInclude Include="..\src\game_variant.h" />
     <ClInclude Include="..\src\file.h" />

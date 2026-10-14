@@ -18,6 +18,7 @@
  */
 #include "keyboard.h"
 
+#include "bike.h"
 #include "joystick.h"
 #include "logging.h"
 #include "mouse.h"
@@ -187,6 +188,8 @@ void mouseGetRelativePosition(Sint32 *const out_x, Sint32 *const out_y)
 
 void handleSdlEvents(void)
 {
+	bike_service();
+
 	SDL_Event ev;
 
 	while (SDL_PollEvent(&ev))

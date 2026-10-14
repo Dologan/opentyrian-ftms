@@ -18,6 +18,7 @@
  */
 #include "opentyr.h"
 
+#include "bike.h"
 #include "bootstrap.h"
 #include "config.h"
 #include "crt_filter.h"
@@ -1223,6 +1224,8 @@ int main(int argc, char *argv[])
 	}
 	const bool launcher = regress_handoff != NULL || (!regress && !selftest && !bootstrap.variant_explicit && !help_requested);
 	bool video_ready = false;
+
+	bike_init();
 
 	if (userFilesEnabled())
 	{
