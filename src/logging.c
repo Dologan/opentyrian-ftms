@@ -18,6 +18,7 @@
 */
 #include "logging.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -94,14 +95,45 @@ const char *logFileFromArgs(int argc, char *argv[])
 SDL_PRINTF_VARARG_FUNC(1)
 void logFatal(SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
 {
-	va_list ap;
-	va_start(ap, fmt);
+	char buffer[256];
+	char *bufferPtr = buffer;
+	size_t bufferSize = sizeof buffer;
 
-	SDL_LogMessageV(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_CRITICAL, fmt, ap);
+	// Format the message once, then hand the same text to every destination
+	// (a va_list cannot be consumed twice).
+	for (;;)
+	{
+		va_list ap;
+		va_start(ap, fmt);
+		int len = SDL_vsnprintf(bufferPtr, bufferSize, fmt, ap);
+		va_end(ap);
 
-	char buffer[4096];
-	SDL_vsnprintf(buffer, sizeof(buffer), fmt, ap);
-	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", buffer, NULL);
+		if (len < 0)
+		{
+			bufferPtr[0] = '\0';
+			break;
+		}
 
-	va_end(ap);
+		if ((size_t)len < bufferSize)
+			break;
+
+		// Truncated: retry once with an exact-size heap buffer.  If that is
+		// not possible, keep the truncated text.
+		if (bufferPtr != buffer)
+			break;
+
+		char *bigger = SDL_malloc((size_t)len + 1);
+		if (bigger == NULL)
+			break;
+
+		bufferPtr = bigger;
+		bufferSize = (size_t)len + 1;
+	}
+
+	SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_CRITICAL, "%s", bufferPtr);
+
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", bufferPtr, NULL);
+
+	if (bufferPtr != buffer)
+		SDL_free(bufferPtr);
 }
