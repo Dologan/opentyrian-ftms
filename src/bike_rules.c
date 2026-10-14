@@ -5,6 +5,9 @@
 #include "bike_rules.h"
 
 #include "bike.h"
+#include "logging.h"
+#include "player.h"
+#include "varz.h"
 
 static uint32_t acc_q16;       /* exact remainder accumulator, 0..0xFFFF */
 static bq16 blend_q16 = BIKE_Q16_ONE; /* 1 = stock refill */
@@ -13,6 +16,8 @@ static bool was_active;
 static bq16 last_norm;
 static int32_t last_income;
 static unsigned last_add;
+static bool surging_now;
+static unsigned long superbombs_granted, shield_fast, sidekick_fast, special_extra;
 
 void bike_rules_level_start(void)
 {
@@ -42,6 +47,15 @@ void bike_rules_frame(const BikeEffortSignals *sig, bool link_up, bool active, u
 	const int32_t step = (int32_t)(((int64_t)(BIKE_Q16_ONE / 2) * dt_us) / 1000000); /* 1/2 per second */
 
 	last_norm = sig->effort_norm;
+	surging_now = sig->surging && bike_gate_open() && bike_source() != BIKE_SOURCE_OFF;
+
+	/* +1 superbomb on overdrive-ready, as the pickup does (cap 10) */
+	if ((sig->events & BIKE_EV_OVERDRIVE) != 0 && bike_settings.surge_superbomb && bike_gate_open() &&
+	    bike_source() != BIKE_SOURCE_OFF && player[0].superbombs < 10)
+	{
+		++player[0].superbombs;
+		++superbombs_granted;
+	}
 	if (active && !was_active)
 	{
 		blend_q16 = BIKE_Q16_ONE; /* income ramps in and never jumps */
@@ -83,6 +97,43 @@ unsigned bike_rules_power_add(unsigned stock_add)
 	last_add = acc_q16 >> 16;
 	acc_q16 &= 0xFFFF;
 	return last_add;
+}
+
+/* 15 -> 8 frames as effort rises; the pool cost per shield point is untouched,
+ * so a surge never makes regen worse than stock. */
+unsigned bike_rules_shield_wait(unsigned stock_wait)
+{
+	int64_t cut;
+
+	if (!surging_now || !bike_settings.surge_shield || stock_wait <= 8)
+		return stock_wait;
+	cut = ((int64_t)(stock_wait - 8) * (last_norm < 0 ? 0 : (last_norm > BIKE_Q16_ONE ? BIKE_Q16_ONE : last_norm)) +
+	       BIKE_Q16_ONE / 2) / BIKE_Q16_ONE;
+	if (cut > 0)
+		++shield_fast;
+	return stock_wait - (unsigned)cut;
+}
+
+unsigned bike_rules_sidekick_charge_ticks(unsigned stock)
+{
+	if (!surging_now || !bike_settings.surge_sidekick)
+		return stock;
+	++sidekick_fast;
+	return stock / 2;
+}
+
+bool bike_rules_extra_special_tick(void)
+{
+	if (!surging_now || !bike_settings.surge_special)
+		return false;
+	++special_extra;
+	return true;
+}
+
+void bike_rules_log_coverage(void)
+{
+	logInfo("Bike effects: superbombs=%lu shield_fast=%lu sidekick_fast=%lu special_extra=%lu", superbombs_granted,
+	        shield_fast, sidekick_fast, special_extra);
 }
 
 bq16 bike_rules_blend(void) { return blend_q16; }

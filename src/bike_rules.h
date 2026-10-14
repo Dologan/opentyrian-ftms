@@ -19,6 +19,14 @@ void bike_rules_frame(const BikeEffortSignals *sig, bool link_up, bool active, u
 /* Replaces powerAdd at the refill: `stock_add` is the equipped generator's value. */
 unsigned bike_rules_power_add(unsigned stock_add);
 
+/* Surge effects (T3.1).  Each is its own setting under the master switch and
+ * acts only while the bike gate is open and the rider is surging (the
+ * superbomb grant fires once per overdrive-ready event).  All integer. */
+unsigned bike_rules_shield_wait(unsigned stock_wait);          /* 15 -> 15 - round(7*effort_norm) while surging; pool cost unchanged */
+unsigned bike_rules_sidekick_charge_ticks(unsigned stock);     /* 20 -> 10 while surging */
+bool bike_rules_extra_special_tick(void);                      /* true while surging: one extra specialWait decrement */
+void bike_rules_log_coverage(void);                            /* one "Bike effects:" line (regress coverage) */
+
 /* clamp(G*(bias + gain*n), F, G*cap), Q16 power units per frame.  Pure. */
 int32_t bike_income_q16(unsigned G, bq16 effort_norm, uint8_t floor, uint16_t bias_pct,
                         uint16_t gain_pct, uint16_t cap_pct);

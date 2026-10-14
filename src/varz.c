@@ -19,6 +19,7 @@
 #include "varz.h"
 
 #include "bike.h"
+#include "bike_rules.h"
 #include "config.h"
 #include "drawlist.h"
 #include "editship.h"
@@ -634,6 +635,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	if (specialWait > 0)
 	{
 		specialWait--;
+		if (specialWait > 0 && bike_rules_extra_special_tick())
+			specialWait--;
 	}
 	temp = SFExecuted[playerNum-1];
 	if (temp > 0 && shotRepeat[SHOT_SPECIAL] == 0 && flareDuration == 0)
