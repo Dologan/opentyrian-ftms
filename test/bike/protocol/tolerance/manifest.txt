@@ -1,0 +1,20 @@
+# Tolerance fixtures for protocol v1 consumers (see docs/protocol.md).
+# Each line: <file> <kind> [key=value ...]
+#   kind    telemetry | status | ignored
+#   telemetry keys: seq, powerW, cadenceRpm (number or null), source (TS client only)
+#   status keys:    state (TS client value, 'unknown' for an unrecognised state),
+#                   streaming (true when state is "streaming"), device (present|absent, TS client only)
+#   ignored         the message must produce no telemetry and no status change
+# Consumers check only the keys they know and skip the rest.
+telemetry-baseline.json            telemetry seq=3 powerW=160 cadenceRpm=80 source=sim
+telemetry-extra-key.json           telemetry seq=3 powerW=160 cadenceRpm=80 source=sim
+telemetry-extra-age-key.json       telemetry seq=3 powerW=160 cadenceRpm=80 source=sim
+telemetry-new-source.json          telemetry seq=3 powerW=160 cadenceRpm=80 source=unknown
+telemetry-null-power.json          telemetry seq=4 powerW=null cadenceRpm=62 source=ftms
+telemetry-key-order-decoy.json     telemetry seq=3 powerW=160 cadenceRpm=80 source=sim
+telemetry-other-version.json       ignored
+status-streaming.json              status state=streaming streaming=true device=present
+status-new-state.json              status state=unknown streaming=false device=absent
+status-extra-device-key.json       status state=streaming streaming=true device=present
+status-malformed-device.json       status state=streaming streaming=true device=absent
+unknown-type.json                  ignored

@@ -3,6 +3,9 @@
  * sockets, needs SDL3 + SDL3_net).  Driven by tools/check_bike_ws.sh.
  *
  *   bike_ws_test fake                    protocol cases against an in-process fake WebSocket server
+ *   bike_ws_test tolerance DIR           the shared protocol tolerance fixtures (test/bike/protocol/tolerance)
+ *                                        through the fake server: a conforming consumer ignores unknown
+ *                                        keys, types and enum values (flywheel docs/protocol.md)
  *   bike_ws_test blackhole HOST PORT     unroutable address: the loop must keep ticking
  *   bike_ws_test refused PORT            nothing listens: backoff 0.5,1,2,4,5 s and keeps ticking
  *   bike_ws_test live HOST PORT SIGFILE  real flywheel-bridge (--source sim): watts follow
@@ -609,11 +612,201 @@ static void run_live(const char *host, uint16_t port, const char *sigfile)
 	bike_ws_close();
 }
 
+/* ---- shared tolerance fixtures ------------------------------------------------ */
+
+typedef struct
+{
+	char file[128];
+	char kind[16];
+	char rest[256]; /* "key=value key=value ..." */
+} TolRow;
+
+static char *slurp(const char *path)
+{
+	FILE *f = fopen(path, "rb");
+	char *buf;
+	long n;
+
+	if (f == NULL)
+		return NULL;
+	fseek(f, 0, SEEK_END);
+	n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	buf = malloc((size_t)n + 1);
+	if (buf != NULL && fread(buf, 1, (size_t)n, f) == (size_t)n)
+		buf[n] = '\0';
+	else
+	{
+		free(buf);
+		buf = NULL;
+	}
+	fclose(f);
+	return buf;
+}
+
+static int tol_load_manifest(const char *dir, TolRow *rows, int cap)
+{
+	char path[512], *text, *line, *save = NULL;
+	int n = 0;
+
+	snprintf(path, sizeof path, "%s/manifest.txt", dir);
+	text = slurp(path);
+	if (text == NULL)
+		return -1;
+	for (line = strtok_r(text, "\n", &save); line != NULL && n < cap; line = strtok_r(NULL, "\n", &save))
+	{
+		TolRow *r = &rows[n];
+
+		while (*line == ' ' || *line == '\t')
+			++line;
+		if (*line == '\0' || *line == '#')
+			continue;
+		r->rest[0] = '\0';
+		if (sscanf(line, "%127s %15s %255[^\n]", r->file, r->kind, r->rest) < 2)
+			continue;
+		++n;
+	}
+	free(text);
+	return n;
+}
+
+/* Looks up key in "k=v k=v ..."; copies the value into out. */
+static bool tol_get(const TolRow *r, const char *key, char *out, size_t cap)
+{
+	const char *p = r->rest;
+	size_t klen = strlen(key);
+
+	while (*p != '\0')
+	{
+		const char *end;
+
+		while (*p == ' ')
+			++p;
+		end = p;
+		while (*end != '\0' && *end != ' ')
+			++end;
+		if ((size_t)(end - p) > klen && strncmp(p, key, klen) == 0 && p[klen] == '=')
+		{
+			size_t vl = (size_t)(end - p) - klen - 1;
+			if (vl >= cap)
+				vl = cap - 1;
+			memcpy(out, p + klen + 1, vl);
+			out[vl] = '\0';
+			return true;
+		}
+		p = end;
+	}
+	return false;
+}
+
+static char *tol_message(const char *dir, const TolRow *r)
+{
+	char path[640], *m;
+	size_t n;
+
+	snprintf(path, sizeof path, "%s/%s", dir, r->file);
+	m = slurp(path);
+	if (m != NULL)
+		for (n = strlen(m); n > 0 && (m[n - 1] == '\n' || m[n - 1] == '\r'); --n)
+			m[n - 1] = '\0';
+	return m;
+}
+
+static void run_tolerance(const char *dir)
+{
+	TolRow rows[64];
+	char pl[256], val[64], prime[160];
+	int n, i, plen;
+
+	printf("shared tolerance fixtures (%s)\n", dir);
+	n = tol_load_manifest(dir, rows, 64);
+	CHECK(n > 0, "manifest.txt readable and non-empty (%d)", n);
+	if (n <= 0)
+		return;
+
+	srv_listen();
+	CHECK(bike_ws_open("127.0.0.1", lport), "open");
+	CHECK(pump_until(c_open, 3000), "handshake completes");
+	(void)srv_read_frame(pl, sizeof pl, &plen); /* hello */
+
+	/* Pass 1, before any telemetry: status fixtures. Streaming only when state is "streaming". */
+	for (i = 0; i < n; ++i)
+	{
+		char *msg;
+
+		if (strcmp(rows[i].kind, "status") != 0)
+			continue;
+		srv_send_frame(0x1, true, "{\"type\":\"status\",\"state\":\"idle\"}");
+		pump_ms(20);
+		CHECK(mb.link == BIKE_LINK_WAITING && !mb.has_sample, "%s: reset to WAITING before the fixture (%d)", rows[i].file, mb.link);
+		msg = tol_message(dir, &rows[i]);
+		CHECK(msg != NULL, "%s readable", rows[i].file);
+		if (msg == NULL)
+			continue;
+		srv_send_frame(0x1, true, msg);
+		pump_ms(30);
+		if (tol_get(&rows[i], "streaming", val, sizeof val))
+			CHECK((mb.link == BIKE_LINK_STREAMING) == (strcmp(val, "true") == 0), "%s: streaming=%s but link=%d", rows[i].file, val, mb.link);
+		CHECK(!mb.has_sample && bike_ws_state() == BIKE_WS_OPEN, "%s: status creates no sample and keeps the link", rows[i].file);
+		free(msg);
+	}
+
+	/* Pass 2: telemetry and ignored fixtures, each after a priming sample with a different seq. */
+	for (i = 0; i < n; ++i)
+	{
+		char *msg;
+		uint32_t before;
+
+		if (strcmp(rows[i].kind, "status") == 0)
+			continue;
+		snprintf(prime, sizeof prime, "{\"type\":\"telemetry\",\"v\":1,\"seq\":%d,\"powerW\":1,\"cadenceRpm\":1}", 1000 + i);
+		expect_sample(prime, mb.latest.seq);
+		CHECK(pump_until(c_newseq, 500) && mb.latest.seq == (uint32_t)(1000 + i), "%s: priming sample", rows[i].file);
+		before = mb.latest.seq;
+		msg = tol_message(dir, &rows[i]);
+		CHECK(msg != NULL, "%s readable", rows[i].file);
+		if (msg == NULL)
+			continue;
+		if (strcmp(rows[i].kind, "telemetry") == 0)
+		{
+			expect_sample(msg, before);
+			CHECK(pump_until(c_newseq, 500), "%s: telemetry parsed", rows[i].file);
+			if (tol_get(&rows[i], "seq", val, sizeof val))
+				CHECK(mb.latest.seq == (uint32_t)atoi(val), "%s: seq %s, got %u", rows[i].file, val, (unsigned)mb.latest.seq);
+			if (tol_get(&rows[i], "powerW", val, sizeof val))
+			{
+				if (strcmp(val, "null") == 0)
+					CHECK(!mb.latest.power_valid, "%s: powerW null -> unknown", rows[i].file);
+				else
+					CHECK(mb.latest.power_valid && q16_milli(mb.latest.power_w) == atoi(val) * 1000, "%s: powerW %s, got %d", rows[i].file, val, q16_milli(mb.latest.power_w));
+			}
+			if (tol_get(&rows[i], "cadenceRpm", val, sizeof val))
+			{
+				if (strcmp(val, "null") == 0)
+					CHECK(!mb.latest.cadence_valid, "%s: cadenceRpm null -> unknown", rows[i].file);
+				else
+					CHECK(mb.latest.cadence_valid && q16_milli(mb.latest.cadence_rpm) == atoi(val) * 1000, "%s: cadenceRpm %s, got %d", rows[i].file, val, q16_milli(mb.latest.cadence_rpm));
+			}
+		}
+		else
+		{
+			srv_send_frame(0x1, true, msg);
+			pump_ms(50);
+			CHECK(mb.latest.seq == before, "%s: ignored (seq %u, was %u)", rows[i].file, (unsigned)mb.latest.seq, (unsigned)before);
+		}
+		CHECK(bike_ws_state() == BIKE_WS_OPEN, "%s: link still open", rows[i].file);
+		free(msg);
+	}
+	bike_ws_close();
+}
+
 int main(int argc, char **argv)
 {
 	signal(SIGPIPE, SIG_IGN);
 	if (argc >= 2 && strcmp(argv[1], "fake") == 0)
 		run_fake();
+	else if (argc >= 3 && strcmp(argv[1], "tolerance") == 0)
+		run_tolerance(argv[2]);
 	else if (argc >= 4 && strcmp(argv[1], "blackhole") == 0)
 		run_blackhole(argv[2], (uint16_t)atoi(argv[3]));
 	else if (argc >= 3 && strcmp(argv[1], "refused") == 0)
@@ -622,7 +815,7 @@ int main(int argc, char **argv)
 		run_live(argv[2], (uint16_t)atoi(argv[3]), argc >= 5 ? argv[4] : NULL);
 	else
 	{
-		fprintf(stderr, "usage: %s fake | blackhole HOST PORT | refused PORT | live HOST PORT [SIGFILE]\n", argv[0]);
+		fprintf(stderr, "usage: %s fake | tolerance DIR | blackhole HOST PORT | refused PORT | live HOST PORT [SIGFILE]\n", argv[0]);
 		return 2;
 	}
 	printf("%s: %d checks, %d failed\n", argv[1], checks, failures);
