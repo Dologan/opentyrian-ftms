@@ -2127,6 +2127,12 @@ void JE_highScoreCheck(void)
 
 				strcpy(stemp, "                             ");
 				temp = 0;
+				if (bike_controls_remote())
+				{
+					// Remote mode: no way to type, so Enter accepts a default name.
+					memcpy(stemp, "PILOT", 5);
+					temp = 5;
+				}
 
 				// The shade below is drawn over another picture in Timed Battle, however
 				// odd that looks; that is what Tyrian 2000 does (fork 3e395df).
@@ -2948,6 +2954,12 @@ void JE_operation(JE_byte slot)
 		memcpy(stemp, saveFiles[slot-1].name, strlen(saveFiles[slot-1].name));
 		temp = strlen(stemp);
 		while (stemp[temp-1] == ' ' && --temp);
+		if (bike_controls_remote() && temp == 0)
+		{
+			// Remote mode: no way to type, so an empty slot gets a default name.
+			memcpy(stemp, "PILOT", 5);
+			temp = 5;
+		}
 
 		flash = 8 * 16 + 10;
 
@@ -3721,6 +3733,13 @@ redo:
 					}
 				}
 
+				// Air mouse (T3b.2): in single-player play the pointer is the device
+				// for player 1, whatever the configured device.  Gate closed (2P,
+				// network, demo, arcade) or switched off: stock device handling.
+				const bool airMouse = playerNum_ == 1 && bike_controls_air_play();
+				if (airMouse)
+					inputDevice = 0;
+
 				/* joystick input */
 				if ((inputDevice == 0 || inputDevice >= 3) && joysticks > 0)
 				{
@@ -3783,11 +3802,21 @@ redo:
 				/* mouse input */
 				if ((inputDevice == 0 || inputDevice == 2) && has_mouse)
 				{
-					mouse_buttons_to_player(mouseButtonsDown, button);
+					if (airMouse)
+						bike_controls_air_buttons(mouseButtonsDown, button);
+					else
+						mouse_buttons_to_player(mouseButtonsDown, button);
 
 					Sint32 mouseXR;
 					Sint32 mouseYR;
 					mouseGetRelativePosition(&mouseXR, &mouseYR);
+					if (airMouse)
+					{
+						int airX = (int)mouseXR, airY = (int)mouseYR;
+						bike_controls_pointer(&airX, &airY);
+						mouseXR = airX;
+						mouseYR = airY;
+					}
 					mouseXC += mouseXR;
 					mouseYC += mouseYR;
 				}
@@ -3822,6 +3851,9 @@ redo:
 					if (recordDemo)
 						recordDemoKeys();
 				}
+
+				if (airMouse)
+					bike_controls_media_buttons(button); // media next/previous: rear mode, sidekicks
 
 				// Bike auto-fire (T3b.1): latched toggle with an energy reserve.
 				// Manual fire was OR-ed above, so the reserve never blocks it; the gate

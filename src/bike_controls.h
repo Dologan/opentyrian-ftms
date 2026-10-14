@@ -38,7 +38,9 @@ bool bike_autofire_held_back(void);
 
 /* --regress-bike-events=FILE: lines "tick,action[,a[,b]]" (ticks ascending,
  * '#' comments).  Actions: autofire_toggle, autofire_on, autofire_off,
- * set (a = "key=value"), fire_on, fire_off (injected manual fire), immortal (regress: youAreCheating), equip (regress only: special=N,
+ * set (a = "key=value"), fire_on, fire_off (injected manual fire), mouse_move,dx,dy (one-shot
+ * pointer motion), mouse_drive,dx,dy (per-frame motion until changed), mouse_down/mouse_up,l|r|m,
+ * key_down/key_up,play_pause|next|prev (injected media keys), immortal (regress: youAreCheating), equip (regress only: special=N,
  * sidekicks=L/R, shield=N on player 1). */
 bool bike_controls_events_load(const char *path);
 
@@ -49,5 +51,35 @@ uint64_t bike_controls_digest(void);
 
 void bike_controls_log_coverage(void); /* one "Bike autofire:" line (regress coverage) */
 void bike_controls_shutdown(void);
+
+/* ---- Air mouse and remote buttons (T3b.2) --------------------------------
+ * Everything below is inert unless master && air_mouse is on, so the stock
+ * input paths stay byte-identical.  See MODERNIZATION section 4.14. */
+
+/* master && air_mouse: the remote translation for menus and screens.  No gate:
+ * it also applies in the setup menu, the shop and the title screen. */
+bool bike_controls_remote(void);
+
+/* remote() && the bike gate: single-player play only (never 2P, network, demo). */
+bool bike_controls_air_play(void);
+
+/* keyboard.c: the key an SDL mouse button becomes in remote mode: left (OK) ->
+ * SDL_SCANCODE_RETURN, right (Back) -> SDL_SCANCODE_ESCAPE, any other button
+ * -> -1 (dropped, so no menu reacts to it).  0 when remote mode is off (the
+ * caller then keeps the stock button path). */
+int bike_controls_remote_button_key(int sdl_button);
+
+/* mainint.c, player 1, in play: scale a frame's relative pointer motion by the
+ * sensitivity (100% = stock, remainders carried) and add the injected motion. */
+void bike_controls_pointer(int *dx, int *dy);
+
+/* mainint.c, in play: pointer buttons -> game buttons.  Left (OK) holds fire,
+ * the middle button keeps its stock action; right (Back) is not a game button,
+ * it opens the in-game menu through bike_controls_frame. */
+void bike_controls_air_buttons(uint8_t buttons_down, bool button[4]);
+
+/* mainint.c, in play: media next -> change rear fire mode, previous -> both
+ * sidekicks (held, like a keyboard key).  Play/pause is an edge in the frame. */
+void bike_controls_media_buttons(bool button[4]);
 
 #endif

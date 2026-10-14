@@ -1,0 +1,8 @@
+# air mouse: pointer motion steers the ship (immortal so the ship outlives the run)
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+10,mouse_drive,-6,0
+14,mouse_drive,0,0
+100,mouse_drive,0,6
+104,mouse_drive,0,0
