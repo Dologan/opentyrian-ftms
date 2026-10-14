@@ -151,6 +151,7 @@
     <ClCompile Include="..\src\game_menu.c" />
     <ClCompile Include="..\src\gamepad_selftest.c" />
     <ClCompile Include="..\src\helptext.c" />
+    <ClCompile Include="..\src\input_probe.c" />
     <ClCompile Include="..\src\interp.c" />
     <ClCompile Include="..\src\joystick.c" />
     <ClCompile Include="..\src\jukebox.c" />
@@ -244,6 +245,7 @@
     <ClInclude Include="..\src\game_menu.h" />
     <ClInclude Include="..\src\gamepad_selftest.h" />
     <ClInclude Include="..\src\helptext.h" />
+    <ClInclude Include="..\src\input_probe.h" />
     <ClInclude Include="..\src\interp.h" />
     <ClInclude Include="..\src\joystick.h" />
     <ClInclude Include="..\src\jukebox.h" />

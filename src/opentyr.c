@@ -32,6 +32,7 @@
 #include "game_data.h"
 #include "gamepad_selftest.h"
 #include "helptext.h"
+#include "input_probe.h"
 #include "installer.h"
 #include "interp.h"
 #include "joystick.h"
@@ -1244,6 +1245,24 @@ int main(int argc, char *argv[])
 		return regress_crt_selfcheck();
 	if (regress_depth_check)
 		return regress_depth_selfcheck();
+
+	if (input_probe_requested)
+	{
+		// Input diagnostic (T3b.0).  It needs the window, the joysticks and the
+		// game's font (so the game data), but no launcher, title or menus.
+		if (!gameDataPrepare())
+			return EXIT_FAILURE;
+		init_video();
+		init_joysticks();
+		loadPals();
+		JE_loadMainShapeTables("tyrian.shp");
+
+		input_probe_run();
+
+		deinit_joysticks();
+		deinit_video();
+		return EXIT_SUCCESS;
+	}
 
 	if (launcher)
 	{
