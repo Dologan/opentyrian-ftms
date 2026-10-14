@@ -13,31 +13,11 @@
 #ifndef BIKE_WS_H
 #define BIKE_WS_H
 
-#include "bike_effort.h"
+#include "bike.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
-/* TODO(T2/T4 merge): these types belong to src/bike.h (t2-core, design
- * section 2).  This block mirrors the design so bike_ws builds standalone;
- * once bike.h exists on the merged branch, delete it and #include "bike.h".
- * bike.h must define BIKE_H, which turns this block off. */
-#ifndef BIKE_H
-typedef enum { BIKE_LINK_OFF, BIKE_LINK_CONNECTING, BIKE_LINK_WAITING, BIKE_LINK_STREAMING } BikeLink;
-typedef struct
-{
-	uint32_t seq;
-	bool power_valid, cadence_valid;
-	bq16 power_w, cadence_rpm;
-	uint64_t arrival_us;
-} BikeSample;
-typedef struct
-{
-	BikeLink link;
-	bool has_sample;
-	BikeSample latest;
-} BikeMailbox;
-#endif
 
 typedef enum
 {

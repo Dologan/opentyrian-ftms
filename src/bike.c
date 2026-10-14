@@ -8,6 +8,7 @@
 #include "bike.h"
 
 #include "bike_feed.h"
+#include "bike_ws.h"
 #include "bike_rules.h"
 #include "config.h"
 #include "demo.h"
@@ -15,6 +16,7 @@
 #include "network.h"
 #include "nortsong.h"
 #include "params.h"
+#include "regress.h"
 
 #include <SDL3/SDL.h>
 
@@ -339,6 +341,8 @@ void bike_config_save(void)
 	}
 }
 
+static uint64_t wall_us(void) { return SDL_GetTicksNS() / 1000; }
+
 /* ---- sources ------------------------------------------------------------- */
 
 bool bike_script_load(const char *spec)
@@ -391,6 +395,7 @@ void bike_init(void)
 
 void bike_shutdown(void)
 {
+	bike_ws_close();
 	if (log_file != NULL)
 	{
 		fclose(log_file);
@@ -404,9 +409,38 @@ void bike_shutdown(void)
 	}
 }
 
+/* The bridge connection is open only while the bike mode asks for the bridge,
+ * never under regress.  Settings are read every call, so toggling the master
+ * switch or changing the address takes effect on the next poll. */
 void bike_service(void)
 {
-	/* The bridge transport (bike_ws) polls here; it only writes the mailbox. */
+	static bool ws_open = false;
+	static char ws_host[sizeof bike_settings.bridge_host];
+	static uint16_t ws_port = 0;
+	static bool ws_failed = false;
+	const bool want = bike_source() == BIKE_SOURCE_BRIDGE && !regress_active();
+
+	if (!want)
+		ws_failed = false;
+	if (ws_open && (!want || ws_port != bike_settings.bridge_port || strcmp(ws_host, bike_settings.bridge_host) != 0))
+	{
+		bike_ws_close();
+		ws_open = false;
+		memset(&mailbox, 0, sizeof mailbox); /* BIKE_LINK_OFF, no sample */
+	}
+	if (want && !ws_open)
+	{
+		memcpy(ws_host, bike_settings.bridge_host, sizeof ws_host);
+		ws_port = bike_settings.bridge_port;
+		if (ws_failed)
+			return; /* SDL3_net is unavailable: try again only after the bridge was switched off */
+		ws_open = bike_ws_open(ws_host, ws_port);
+		ws_failed = !ws_open;
+		if (!ws_open)
+			return;
+	}
+	if (ws_open)
+		bike_ws_poll(&mailbox, wall_us());
 }
 
 void bike_level_start(void)
@@ -435,8 +469,6 @@ bool bike_generator_on(void)
 }
 
 /* ---- frame tick ---------------------------------------------------------- */
-
-static uint64_t wall_us(void) { return SDL_GetTicksNS() / 1000; }
 
 void bike_frame_tick(void)
 {
