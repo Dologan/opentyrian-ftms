@@ -1,0 +1,9 @@
+# touch controls (T3b.3): a quick two-finger tap on the playfield opens the in-game menu
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
+496,finger_down,1,450,500
+497,finger_down,2,550,500
+498,finger_up,1
+498,finger_up,2

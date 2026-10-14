@@ -1,0 +1,9 @@
+# touch controls (T3b.3): taps on the REAR zone (left panel, top)
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
+20,finger_down,1,30,100
+40,finger_up,1
+100,finger_down,1,30,100
+104,finger_up,1
