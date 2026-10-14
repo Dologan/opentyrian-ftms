@@ -21,6 +21,7 @@
 #include "animlib.h"
 #include "backgrnd.h"
 #include "bike.h"
+#include "bike_controls.h"
 #include "bike_rules.h"
 #include "demo.h"
 #include "drawlist.h"
@@ -3638,7 +3639,10 @@ bool titleScreen(void)
 			{
 				JE_playSampleNum(S_SPRING);
 
-				done = true;
+				// Remote mode (air mouse): Back is also the remote's right
+				// click, so it asks first instead of quitting outright.
+				done = bike_controls_remote() ? JE_quitRequest() : true;
+				break;
 			}
 			default:
 				break;

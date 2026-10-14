@@ -19,6 +19,7 @@
 #include "keyboard.h"
 
 #include "bike.h"
+#include "bike_controls.h"
 #include "joystick.h"
 #include "logging.h"
 #include "mouse.h"
@@ -373,7 +374,9 @@ void handleSdlEvents(void)
 				else
 					SDL_HideCursor();
 
-				if (ev.motion.xrel != 0 || ev.motion.yrel != 0)
+				// Remote mode: pointer drift must not move menu focus or show the
+				// pointer; the relative motion above still steers the ship.
+				if ((ev.motion.xrel != 0 || ev.motion.yrel != 0) && !bike_controls_remote())
 				{
 					mouseHasMotionInput = true;
 
@@ -385,6 +388,26 @@ void handleSdlEvents(void)
 			{
 				Sint32 x = (Sint32)ev.button.x, y = (Sint32)ev.button.y;
 				mapWindowPointToScreen(&x, &y);
+
+				// Remote mode: OK (left) and Back (right) become Enter and Esc, acting
+				// on the focused row; other buttons are dropped.
+				const int remoteKey = bike_controls_remote_button_key(ev.button.button);
+				if (remoteKey != 0)
+				{
+					if (remoteKey > 0 && keyboardInputsCount < COUNTOF(keyboardInputs))
+					{
+						KeyboardInput *const input = &keyboardInputs[keyboardInputsBack];
+						input->sym = remoteKey == SDL_SCANCODE_RETURN ? SDLK_RETURN : SDLK_ESCAPE;
+						input->scancode = (SDL_Scancode)remoteKey;
+						input->mod = SDL_KMOD_NONE;
+						input->ch = 0;
+						keyboardInputsBack = keyboardInputsBack == COUNTOF(keyboardInputs) - 1 ? 0 : keyboardInputsBack + 1;
+						keyboardInputsCount += 1;
+					}
+					mouseButtonsDown |= SDL_BUTTON_MASK(ev.button.button);
+					mouseInactive = true;
+					break;
+				}
 
 				if (mouseInputsCount < COUNTOF(mouseInputs))
 				{

@@ -13,6 +13,12 @@ Convenções:
 
 ## 2026-10-14
 
+### Bike (FTMS): mouse aéreo e navegação pelo controle remoto (T3b.2, parte do T3b.4)
+- **Mouse aéreo:** com mestre e `air_mouse` ligados, o movimento relativo do ponteiro dirige a nave do jogador 1 em 1P (`inputDevice` forçado a 0 no `JE_playerMovement`), escalado por `pointer_sensitivity`, mantido o clamp de ±30. OK mantém o tiro, o clique direito abre o menu do jogo, Play/Pause pausa, Próxima/Anterior trocam o tiro traseiro e disparam os sidekicks. One-Euro não foi portado.
+- **Menus:** OK vira Enter e Voltar vira Esc (na linha focada, sem olhar o ponteiro), outros botões e a deriva do ponteiro são ignorados. Corrige o Voltar da loja, do cubo de dados e do lançador, o clique direito no Sim do pedido de saída, o título que saía com Voltar (agora pergunta) e os nomes em branco (`PILOT`). O pedido de saída começa em Não nesse modo.
+- **Bug do seletor** (`opentyr.c`): o clique comparava y com um limite em x. Corrigido sem condição; nenhum baseline mudou (o regress não entrega mouse).
+- **Testes:** novas ações de `--regress-bike-events` (movimento, botões e teclas de mídia injetados) e casos novos em `check_bike.sh`; os 207 baselines e os digests antigos de `test/bike/regress.txt` não mudaram. Tabela de problemas e estado em `doc/ftms/remote-navigation-audit.md`. Ainda abertos: confirmação ao sair pelo menu do jogo e pelo Esc do lançador, seletor de letras para os nomes, e a entrega real das teclas de mídia no Windows (sonda T3b.0).
+
 ### Bike (FTMS): menu e HUD (T2.5, T2.6)
 - **Menu:** novo `src/bike_menu.[ch]`, "Bike and Controls..." no Setup (`SETUP_MENU_BIKE`) e no menu do jogo. Lista rolável com todos os toggles do `design.md` (mestre, Bike Power, Bridge host:port com caixa de texto, FTP com passo 5 e aceleração ao segurar, Strength, Floor, quatro surges, Auto-fire, reserva 25/50%, mouse aéreo, velocidade do ponteiro, toque, HUD) e uma linha de estado ao vivo. Aplica na hora e persiste em `[ftms]`; `&` e `<` não existem nas fontes do jogo, por isso o nome é "Bike and Controls".
 - **HUD:** Modern (painel de status do 1P: ponto de link, watts, rpm, esforço, medidor de surge, AUTO/HOLD/SURGE) e Classic (ponto e watts). Só desenha com mestre e HUD ligados. `bike_autofire_state()` é um stub (falso) até o auto-fire do T3b.1.
