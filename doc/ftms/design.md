@@ -141,6 +141,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `autofire` (`off`|`toggle`), `autofire_reserve` (0|25|50), `autofire_key`, `autofire_key2` (SDL scancode names; defaults `A` and `Application`, i.e. the remote's Menu key, pending the T3b.0 probe)
   - `air_mouse`, `pointer_sensitivity`, `pointer_smoothing`, `touch`, `remote_buttons`
   - `ftp`, `floor`, `bias`, `strength` (gain), `cap`
+  - `superbomb_cooldown` (seconds, 0-600, default 60; 0 lifts the rate limit; not in the menu)
   - `bridge_host`, `bridge_port`
 - **CLI ids 440–459** (add to the AGENTS table). No name may be a prefix of another. `check_bike.sh` scans `params.c` for prefix pairs.
 
@@ -150,7 +151,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   | 441 | `--regress-bike-log=FILE` | 451 | `--ftms-ftp=W` |
   | 442 | `--regress-bike-set=K=V[,K=V…]` | 452 | `--ftms-off` (forces master off for this run) |
   | 443 | `--regress-bike-events=FILE` | 453 | `--ftms-log=FILE` (T5.2) |
-  | 444–449 | reserved | 454 | `--input-probe` (T3b.0); 455–459 reserved |
+  | 444–449 | reserved | 454 | `--input-probe` (T3b.0); 455 `--ftms-test-level=E:L` (T4.2, local bridge check only); 456–459 reserved |
 
 - **Regress pin**: next to `regress.c:1356`, call `bike_settings_default()` and force `master = 0`. Then apply `--regress-bike-set`. `--regress-bike-feed` implies `master = 1, generator = 1`. Set `bike_settings_pinned`, which makes `bike_config_save()` leave `[ftms]` untouched.
 - **Menus**: `SETUP_MENU_BIKE = 4` (`opentyr.h:68`, `opentyr.c:283`).
@@ -181,7 +182,7 @@ bike_gate_open() = master && level_active && !twoPlayerMode && !onePlayerAction 
 | Pointer | `mainint.c:3735` (`mouseXC += mouseXR`) | `bike_controls_pointer(&mouseXC, &mouseYC)` when `air_mouse`. The ±30 clamp at `3788-3795` is kept. |
 | Sidekick surge | `mainint.c:4731` | `charge_ticks = bike_rules_sidekick_charge_ticks(20);` |
 | Special surge | `varz.c:633`, after `specialWait--` | `if (bike_rules_extra_special_tick() && specialWait > 0) specialWait--;` |
-| Superbomb | inside `bike_rules_frame` | On `BIKE_EV_OVERDRIVE`: `if (player[0].superbombs < 10) ++…`, as the pickup at `mainint.c:5091` does |
+| Superbomb | inside `bike_rules_frame` | On `BIKE_EV_OVERDRIVE`: `++player[0].superbombs` like the pickup at `mainint.c:5091`, but capped at `BIKE_SUPERBOMB_CAP` (5, not the pickup's 10) and at most once per `superbomb_cooldown` (default 60 s of gameplay time, counted from `dt`, so frame-rate invariant). Measured: a Q200B ride fires ~15 overdrive events in 90 s, so uncapped it was too generous |
 | Transport | `keyboard.c:189` `handleSdlEvents()` | `bike_service()` |
 | HUD | `modern_hud.c:875` status panel; generator row `662` | Reads `bike_hud()` only. It never writes, never calls `mt_rand`, and never touches `bike_settings`. |
 

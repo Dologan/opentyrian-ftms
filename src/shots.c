@@ -18,6 +18,7 @@
  */
 #include "shots.h"
 
+#include "bike.h"
 #include "drawlist.h"
 #include "episodes.h"
 #include "game_rules.h"
@@ -348,7 +349,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	const JE_WeaponType* weapon = &weapons[wpNum];
 
 	if (power < weaponPort[portNum].poweruse)
+	{
+		bike_note_shot(false);
 		return MAX_PWEAPON;
+	}
+	bike_note_shot(true);
 	power -= weaponPort[portNum].poweruse;
 
 	if (weapon->sound > 0)
