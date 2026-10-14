@@ -11,6 +11,19 @@ Convenções:
 
 ---
 
+## 2026-10-14
+
+### Portes do OpenTyrian upstream (carlreinke, 216c771..624e2f2)
+- Portados por intenção, um commit cada, citando o hash upstream. Nenhuma linha de base mudou: 207/207 casos 2.1 passam.
+  - `216c771` `math.h` incluído onde usado (8 `.c`) e `TreatSpecificWarningsAsErrors=4013` no projeto MSVC.
+  - `49af573` `toupper`/`tolower` sem comportamento indefinido: o código das teclas secretas da tela de título e também os outros usos (`joystick.c`, `params.c`, `sprite.c`, nome do arquivo de shapes), que o upstream não tocou.
+  - `dda8863` movimento do mouse só conta como entrada quando é diferente de zero; espaços sobrando em `JE_showVGA`. A troca `SDL_FALSE` -> `SDL_DISABLE` é só de SDL2 e não se aplica.
+  - `52140ae` o arquivo de sons só é carregado se `init_audio()` der certo; se o dispositivo não abre, o subsistema de áudio é encerrado.
+  - `a0ed9fd` página de código UTF-8 no Windows: `visualc/opentyrian.manifest` embutido por `visualc/resources.rc`. O build MSYS2 já compila esse `.rc` com `windres`, então recebe o manifesto sem mudança extra (a regra do `Makefile` passou a depender do manifesto). Não testado no Windows.
+  - `a923d8b` `logFatal` formata a mensagem uma vez (antes reusava o `va_list`); passa por `SDL_LogMessage`, mantendo o `--log-file`.
+  - `624e2f2` **parcial**: `src/swar.h` + SWAR nas linhas de tiles do fundo, em `drawlist_apply_filter_screen` e nos filtros iced/blur, com saída idêntica por construção. Ficaram de fora a reescrita de lava/água (o próprio upstream diz "slightly different"), o `showHeadlight` (diverge do original para posições fora da faixa e falha as asserts do upstream em px=py=0 numa comparação exaustiva) e `showFlipped`/`showNormal` (o `interp_blit_playfield` já faz essa cópia).
+- Commits somente de README do upstream (`f3d4560`, `ba9c399`) ignorados.
+
 ## 2026-10-09
 
 ### Documentação: planos viram `MODERNIZATION.md` e `CHANGELOG.md`
