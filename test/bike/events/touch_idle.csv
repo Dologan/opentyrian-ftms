@@ -1,0 +1,5 @@
+# touch controls (T3b.3): idle with touch on
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
