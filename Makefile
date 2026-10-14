@@ -227,6 +227,11 @@ regress-2000 :
 	TYRIAN2000_DATA="$(TYRIAN2000_DATA)" REGRESS_JOBS="$(REGRESS_JOBS)" tools/regress-2000.sh
 	if [ -z "$$REGRESS_ONLY" ] || printf '%s\n' check_progress.sh | grep -Eq "$$REGRESS_ONLY"; then tools/check_progress.sh ./opentyrian 2000 "$(TYRIAN2000_DATA)"; fi
 
+# Exercise-bike core: scripted feeds against committed digests (tools/check_bike.sh).
+.PHONY : regress-bike
+regress-bike : $(TARGET)
+	tools/check_bike.sh ./opentyrian "$(if $(TYRIAN_DATA),$(TYRIAN_DATA),data)" test/regress/actual/bike
+
 .PHONY : regress-replay
 regress-replay :
 	TYRIAN_DATA="$(TYRIAN_DATA)" REGRESS_JOBS="$(REGRESS_JOBS)" tools/regress.sh --replay-check

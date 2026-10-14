@@ -288,6 +288,13 @@ if guard_selected check_bike_effort.sh && ! "$ROOT/tools/check_bike_effort.sh"; 
 	exit 1
 fi
 
+bike_args=()
+[ "$QUICK" -eq 1 ] && bike_args=(--quick)
+if guard_selected check_bike.sh && ! "$ROOT/tools/check_bike.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/bike" ${bike_args[@]+"${bike_args[@]}"}; then
+	echo "ERROR: bike core checks failed"
+	exit 1
+fi
+
 if guard_selected check_installer.sh && ! "$ROOT/tools/check_installer.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/installer"; then
 	echo "ERROR: Tyrian 2000 installer checks failed"
 	exit 1
