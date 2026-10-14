@@ -18,3 +18,4 @@ status-new-state.json              status state=unknown streaming=false device=a
 status-extra-device-key.json       status state=streaming streaming=true device=present
 status-malformed-device.json       status state=streaming streaming=true device=absent
 unknown-type.json                  ignored
+welcome.json                       ignored
