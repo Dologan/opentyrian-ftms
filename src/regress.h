@@ -139,6 +139,7 @@ void regress_stick_log_tick(int player_x, int player_y, int x_velocity, int y_ve
 #define REGRESS_MENU_INGAME 1
 #define REGRESS_MENU_PAUSE  2
 #define REGRESS_MENU_HELP   3
+#define REGRESS_MENU_BIKE   4  // the in-game menu, then its Bike and Controls overlay
 
 extern int regress_menu_kind;  // REGRESS_MENU_* requested; NONE = disabled
 
