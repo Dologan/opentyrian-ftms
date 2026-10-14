@@ -1,0 +1,22 @@
+# Fixtures for consumers of the opt-in 'rider' message (docs/protocol.md "Capabilities").
+# Each line: <file> <kind> [key=value ...]
+#   kind   rider | no-ftp
+#            rider  the consumer ends up with this rider and FTP
+#            no-ftp the message carries no usable FTP: keep whatever FTP was already in use
+#   keys   id, name (ASCII-cleaned, see below), ftpW (as sent), ftpClamped (what a consumer that
+#          accepts 50..500 W holds, whole watts rounded half up), source
+# Name cleaning for C-style consumers: JSON escapes are decoded (\u0041 -> A); a character above
+# ASCII, raw UTF-8 or as a \uXXXX escape, becomes one '?'; the result is cut to 31 characters.
+# Tokens never contain spaces, so a line splits on whitespace. A consumer checks the keys it knows.
+rider-basic.json          rider id=ann name=Ann ftpW=230 ftpClamped=230 source=test
+rider-minimal.json        rider id=bo name=Bo ftpW=180 ftpClamped=180
+rider-fraction.json       rider id=ann name=Ann ftpW=231.6 ftpClamped=232
+rider-clamp-low.json      rider id=ann name=Ann ftpW=12 ftpClamped=50
+rider-clamp-high.json     rider id=ann name=Ann ftpW=900 ftpClamped=500
+rider-escapes.json        rider id=ann name=A"n\A/?? ftpW=200 ftpClamped=200
+rider-long-name.json      rider id=ann name=abcdefghijklmnopqrstuvwxyz01234 ftpW=200 ftpClamped=200
+rider-decoys.json         rider id=ann name=Ann ftpW=210 ftpClamped=210 source=test
+rider-future-keys.json    rider id=ann name=Ann ftpW=200 ftpClamped=200
+rider-no-ftp.json         no-ftp
+rider-string-ftp.json     no-ftp
+rider-zero-ftp.json       no-ftp

@@ -326,11 +326,89 @@ static bool parse_u32(const char *v, uint32_t *out)
 	return any;
 }
 
+static int hex_digit(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
+/* Copies the JSON string at v (which must start with '"') into out as plain ASCII, at most cap-1
+ * characters.  Escapes are decoded; a control character becomes a space; a character above ASCII,
+ * whether raw UTF-8 or a \uXXXX escape, becomes one '?' (a surrogate pair therefore gives two).
+ * False if v is not a string.  See shared/protocol/fixtures/rider/manifest.txt. */
+static bool copy_json_string(const char *v, char *out, size_t cap)
+{
+	size_t n = 0;
+
+	if (cap == 0)
+		return false;
+	out[0] = '\0';
+	if (*v != '"')
+		return false;
+	for (++v; *v != '"' && *v != '\0'; ++v)
+	{
+		const unsigned char c = (unsigned char)*v;
+		int ch = -1; /* -1: nothing to add */
+
+		if (c == '\\')
+		{
+			++v;
+			switch (*v)
+			{
+			case '"': case '\\': case '/':
+				ch = (unsigned char)*v;
+				break;
+			case 'b': case 'f': case 'n': case 'r': case 't':
+				ch = ' ';
+				break;
+			case 'u':
+			{
+				unsigned cp = 0;
+				int k;
+
+				for (k = 0; k < 4 && hex_digit(v[1 + k]) >= 0; ++k)
+					cp = cp * 16 + (unsigned)hex_digit(v[1 + k]);
+				if (k == 4)
+				{
+					v += 4;
+					ch = cp < 0x20 ? ' ' : (cp < 0x80 ? (int)cp : '?');
+				}
+				else
+					ch = '?';
+				break;
+			}
+			case '\0':
+				out[n] = '\0';
+				return true;
+			default:
+				ch = '?';
+				break;
+			}
+		}
+		else if (c < 0x20)
+			ch = ' ';
+		else if (c < 0x80)
+			ch = c;
+		else if (c >= 0xC0)
+			ch = '?'; /* the first byte of a multi-byte character */
+		/* 0x80..0xBF continue a character already counted */
+		if (ch >= 0 && n + 1 < cap)
+			out[n++] = (char)ch;
+	}
+	out[n] = '\0';
+	return true;
+}
+
 typedef enum { FIELD_ABSENT, FIELD_UNKNOWN, FIELD_NUMBER } FieldKind; /* UNKNOWN: null or not a number */
 
 typedef struct
 {
-	bool is_telemetry, is_status;
+	bool is_telemetry, is_status, is_rider;
 	bool v_present;
 	bq16 v;
 	FieldKind power, cadence;
@@ -340,6 +418,12 @@ typedef struct
 	bool streaming;
 	FieldKind age_power, age_cadence;
 	bq16 age_power_ms, age_cadence_ms;
+	/* "rider" */
+	FieldKind ftp;
+	bq16 ftp_q;
+	bool has_id;
+	char id[sizeof ((BikeRider *)0)->id], name[sizeof ((BikeRider *)0)->name];
+	char source[sizeof ((BikeRider *)0)->source], bike[sizeof ((BikeRider *)0)->bike];
 } WsMessage;
 
 static void scan_field(const char *val, FieldKind *kind, bq16 *out)
@@ -368,6 +452,8 @@ static bool parse_message(const char *json, WsMessage *m)
 				m->is_telemetry = true;
 			else if (strncmp(val, "\"status\"", 8) == 0)
 				m->is_status = true;
+			else if (strncmp(val, "\"rider\"", 7) == 0)
+				m->is_rider = true;
 		}
 		else if (key_is(key, klen, "v"))
 		{
@@ -388,6 +474,30 @@ static bool parse_message(const char *json, WsMessage *m)
 		else if (key_is(key, klen, "state"))
 		{
 			m->streaming = strncmp(val, "\"streaming\"", 11) == 0;
+		}
+		else if (key_is(key, klen, "ftpW"))
+		{
+			scan_field(val, &m->ftp, &m->ftp_q);
+		}
+		else if (key_is(key, klen, "id"))
+		{
+			m->has_id = copy_json_string(val, m->id, sizeof m->id);
+		}
+		else if (key_is(key, klen, "name"))
+		{
+			(void)copy_json_string(val, m->name, sizeof m->name);
+		}
+		else if (key_is(key, klen, "ftpSource"))
+		{
+			(void)copy_json_string(val, m->source, sizeof m->source);
+		}
+		else if (key_is(key, klen, "ftpBike") && *val == '{')
+		{
+			const char *bp = val + 1, *bkey, *bval;
+			size_t bklen;
+			while (next_member(&bp, &bkey, &bklen, &bval))
+				if (key_is(bkey, bklen, "name"))
+					(void)copy_json_string(bval, m->bike, sizeof m->bike);
 		}
 		else if (key_is(key, klen, "age") && *val == '{')
 		{
@@ -410,6 +520,32 @@ static bq16 clamp_nonneg(bq16 x)
 	return x < 0 ? 0 : x;
 }
 
+/* The bridge's active rider.  A message with a usable FTP replaces the stored rider.  One without
+ * (no FTP, not a number, zero) leaves the FTP already in use alone, unless it names a different
+ * rider: then the old FTP is not theirs and is dropped.  The FTP is whole watts, rounded half up
+ * and clamped to what the game accepts. */
+static void apply_rider(BikeMailbox *mb, const WsMessage *m)
+{
+	BikeRider *r = &mb->rider;
+	uint32_t watts = 0;
+
+	if (m->ftp == FIELD_NUMBER && m->ftp_q > 0)
+		watts = ((uint32_t)m->ftp_q + 32768u) >> 16;
+	if (watts == 0)
+	{
+		if (r->valid && m->has_id && strcmp(r->id, m->id) != 0)
+			memset(r, 0, sizeof *r);
+		return;
+	}
+	memset(r, 0, sizeof *r);
+	r->valid = true;
+	r->ftp_w = (uint16_t)(watts < BIKE_FTP_MIN ? BIKE_FTP_MIN : (watts > BIKE_FTP_MAX ? BIKE_FTP_MAX : watts));
+	memcpy(r->id, m->id, sizeof r->id);
+	memcpy(r->name, m->name, sizeof r->name);
+	memcpy(r->source, m->source, sizeof r->source);
+	memcpy(r->bike, m->bike, sizeof r->bike);
+}
+
 static void handle_message(const char *json, BikeMailbox *mb, uint64_t now_us)
 {
 	WsMessage m;
@@ -417,6 +553,11 @@ static void handle_message(const char *json, BikeMailbox *mb, uint64_t now_us)
 	if (!parse_message(json, &m))
 	{
 		logDebug("bike bridge: unreadable message ignored");
+		return;
+	}
+	if (m.is_rider)
+	{
+		apply_rider(mb, &m);
 		return;
 	}
 	if (!m.is_telemetry && !m.is_status)
@@ -687,7 +828,9 @@ static bool process_handshake(uint64_t now_us)
 	failure_logged = false;
 	logInfo("bike bridge %s:%u: connected", host_name, (unsigned)host_port);
 	{
-		static const char hello[] = "{\"type\":\"hello\",\"client\":\"game\",\"v\":1}";
+		/* Asks for the opt-in "rider" message (the bridge's active rider and their FTP).  A bridge that
+		 * predates capabilities ignores the unknown key and simply never sends one. */
+		static const char hello[] = "{\"type\":\"hello\",\"client\":\"game\",\"v\":1,\"caps\":[\"rider\"]}";
 		if (!send_frame(0x1, (const uint8_t *)hello, (int)sizeof hello - 1))
 		{
 			fail_link("write failed", now_us);

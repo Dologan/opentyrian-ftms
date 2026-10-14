@@ -38,7 +38,7 @@
 
 static const SDL_GamepadButton pad_toggle_buttons[] = { SDL_GAMEPAD_BUTTON_RIGHT_STICK };
 
-typedef enum { EV_TOGGLE, EV_ON, EV_OFF, EV_SET, EV_EQUIP, EV_FIRE_ON, EV_FIRE_OFF, EV_IMMORTAL,
+typedef enum { EV_TOGGLE, EV_ON, EV_OFF, EV_SET, EV_EQUIP, EV_RIDER, EV_FIRE_ON, EV_FIRE_OFF, EV_IMMORTAL,
 		EV_MOUSE_MOVE, EV_MOUSE_DRIVE, EV_MOUSE_DOWN, EV_MOUSE_UP, EV_KEY_DOWN, EV_KEY_UP,
 		EV_FINGER } EventKind;
 
@@ -322,6 +322,10 @@ static void apply_event(const InjectedEvent *e)
 		player[0].last_items = player[0].items;
 		JE_drawOptions();
 		break;
+	case EV_RIDER: /* regress only: the bridge announces a rider "FTP[:NAME]" */
+		if (!bike_regress_rider(e->arg))
+			logWarn("bike events: bad rider '%s'", e->arg);
+		break;
 	case EV_SET:
 	{
 		char *eq, buf[sizeof e->arg];
@@ -462,9 +466,10 @@ bool bike_controls_events_load(const char *path)
 			e.kind = EV_FINGER;
 			sprintf(e.arg, "%s,%s", act, rest);
 		}
-		else if ((strcmp(act, "set") == 0 || strcmp(act, "equip") == 0) && rest != NULL && strlen(rest) < sizeof e.arg)
+		else if ((strcmp(act, "set") == 0 || strcmp(act, "equip") == 0 || strcmp(act, "rider") == 0) &&
+		         rest != NULL && strlen(rest) < sizeof e.arg)
 		{
-			e.kind = strcmp(act, "set") == 0 ? EV_SET : EV_EQUIP;
+			e.kind = strcmp(act, "set") == 0 ? EV_SET : (strcmp(act, "rider") == 0 ? EV_RIDER : EV_EQUIP);
 			strcpy(e.arg, rest);
 		}
 		else

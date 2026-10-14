@@ -76,6 +76,7 @@ void bike_settings_default(BikeSettings *s)
 	s->autofire_key2 = SDL_SCANCODE_APPLICATION;
 	s->pointer_sens_pct = 100;
 	s->ftp_w = 200;
+	s->ftp_auto = true;
 	s->superbomb_cooldown_s = 60; /* BIKE_SUPERBOMB_COOLDOWN_S */
 	s->floor = 8;
 	s->bias_pct = 50;
@@ -180,9 +181,19 @@ bool bike_settings_set(const char *key, const char *value)
 	}
 	if (strcmp(key, "ftp") == 0)
 	{
-		if (!parse_uint(value, 50, 500, &n))
+		if (!parse_uint(value, BIKE_FTP_MIN, BIKE_FTP_MAX, &n))
 			return false;
 		s->ftp_w = (uint16_t)n;
+		return true;
+	}
+	if (strcmp(key, "ftp_source") == 0)
+	{
+		if (strcmp(value, "auto") == 0 || strcmp(value, "bridge") == 0)
+			s->ftp_auto = true;
+		else if (strcmp(value, "manual") == 0)
+			s->ftp_auto = false;
+		else
+			return false;
 		return true;
 	}
 	if (strcmp(key, "floor") == 0)
@@ -274,7 +285,7 @@ bool bike_settings_set_list(const char *list)
 static const char *const config_keys[] = {
 	"enabled", "generator", "hud", "surge_superbomb", "surge_sidekick", "surge_special", "surge_shield",
 	"autofire", "autofire_reserve", "autofire_key", "autofire_key2", "air_mouse", "pointer_sensitivity",
-	"touch", "remote_buttons", "ftp", "floor", "superbomb_cooldown", "bias", "strength", "cap",
+	"touch", "remote_buttons", "ftp", "ftp_source", "floor", "superbomb_cooldown", "bias", "strength", "cap",
 	"bridge_host", "bridge_port"
 };
 
@@ -302,6 +313,7 @@ static void setting_text(const char *key, char *out, size_t cap)
 	else if (strcmp(key, "touch") == 0) str = onoff(s->touch);
 	else if (strcmp(key, "remote_buttons") == 0) str = onoff(s->remote_buttons);
 	else if (strcmp(key, "ftp") == 0) num = s->ftp_w;
+	else if (strcmp(key, "ftp_source") == 0) str = s->ftp_auto ? "auto" : "manual";
 	else if (strcmp(key, "floor") == 0) num = s->floor;
 	else if (strcmp(key, "superbomb_cooldown") == 0) num = s->superbomb_cooldown_s;
 	else if (strcmp(key, "bias") == 0) num = s->bias_pct;
@@ -360,6 +372,16 @@ bool bike_override_set(const char *key, const char *value)
 		override_count = i + 1;
 	}
 	return true;
+}
+
+static bool override_present(const char *key)
+{
+	unsigned i;
+
+	for (i = 0; i < override_count; ++i)
+		if (strcmp(overrides[i].key, key) == 0)
+			return true;
+	return false;
 }
 
 static void config_save_values(void);
@@ -432,6 +454,7 @@ void bike_regress_pin(const char *set_list)
 {
 	bike_settings_default(&bike_settings);
 	bike_settings.master = false;
+	bike_settings.ftp_auto = false; /* a regress run never depends on a bridge (unless a case asks) */
 	forced_off = false;
 	if (feed_loaded)
 	{
@@ -510,6 +533,66 @@ void bike_shutdown(void)
 	}
 }
 
+/* ---- FTP in force --------------------------------------------------------- */
+
+/* The bridge's rider as it was when it was last safe to look: between levels (every service
+ * call) and at level start.  Mid-level bridge changes wait for the next level, because the effort
+ * engine is rebuilt the moment the FTP changes and effort would jump. */
+static BikeRider rider_frozen;
+
+static void refresh_rider_ftp(void)
+{
+	rider_frozen = mailbox.rider;
+}
+
+static bool bridge_ftp_in_force(void)
+{
+	return bike_settings.ftp_auto && rider_frozen.valid && !override_present("ftp");
+}
+
+unsigned bike_ftp_w(void)
+{
+	return bridge_ftp_in_force() ? rider_frozen.ftp_w : bike_settings.ftp_w;
+}
+
+void bike_ftp_info(BikeFtpInfo *out)
+{
+	memset(out, 0, sizeof *out);
+	out->watts = bike_ftp_w();
+	if (bridge_ftp_in_force())
+	{
+		out->from_bridge = true;
+		snprintf(out->rider, sizeof out->rider, "%s", rider_frozen.name);
+		snprintf(out->source, sizeof out->source, "%s", rider_frozen.source);
+		snprintf(out->bike, sizeof out->bike, "%s", rider_frozen.bike);
+	}
+	out->pending = bike_settings.ftp_auto && !override_present("ftp") &&
+	               mailbox.rider.valid && (!rider_frozen.valid || mailbox.rider.ftp_w != rider_frozen.ftp_w);
+}
+
+bool bike_regress_rider(const char *spec)
+{
+	char *end;
+	const unsigned long ftp = strtoul(spec, &end, 10);
+	const char *name = "Test";
+
+	if (end == spec || (*end != '\0' && *end != ':'))
+		return false;
+	if (*end == ':')
+	{
+		name = end + 1;
+		if (*name == '\0' || strlen(name) >= sizeof mailbox.rider.name)
+			return false;
+	}
+	memset(&mailbox.rider, 0, sizeof mailbox.rider);
+	mailbox.rider.valid = true;
+	mailbox.rider.ftp_w = (uint16_t)(ftp < BIKE_FTP_MIN ? BIKE_FTP_MIN : (ftp > BIKE_FTP_MAX ? BIKE_FTP_MAX : ftp));
+	strcpy(mailbox.rider.id, "regress");
+	strcpy(mailbox.rider.name, name);
+	strcpy(mailbox.rider.source, "test");
+	return true;
+}
+
 /* The bridge connection is open only while the bike mode asks for the bridge,
  * never under regress.  Settings are read every call, so toggling the master
  * switch or changing the address takes effect on the next poll. */
@@ -542,10 +625,13 @@ void bike_service(void)
 	}
 	if (ws_open)
 		bike_ws_poll(&mailbox, wall_us());
+	if (!level_active)
+		refresh_rider_ftp(); /* menus, title, shop: the safe moments to take a new bridge FTP */
 }
 
 void bike_level_start(void)
 {
+	refresh_rider_ftp();
 	level_active = true;
 	bike_rules_level_start();
 }
@@ -621,15 +707,15 @@ void bike_frame_tick(void)
 	last_dt_us = (uint32_t)(((uint64_t)getFramePeriodTicks10() * frames * 1000) / 1024);
 	clock_us += last_dt_us;
 
-	if (bike_settings.ftp_w != eff_cfg_ftp || !eff_ready)
+	if (bike_ftp_w() != eff_cfg_ftp || !eff_ready)
 	{
-		bike_effort_config_default(&eff_cfg, bike_settings.ftp_w);
+		bike_effort_config_default(&eff_cfg, bike_ftp_w());
 		if (!eff_ready)
 		{
 			bike_effort_init(&eff_state, &eff_cfg);
 			bike_feed_state_init(&feed_state);
 		}
-		eff_cfg_ftp = bike_settings.ftp_w;
+		eff_cfg_ftp = bike_ftp_w();
 		eff_ready = true;
 	}
 
