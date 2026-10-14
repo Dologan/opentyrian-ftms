@@ -43,6 +43,10 @@ fail() { echo "FAIL bike-$1: $2"; exit 1; }
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
 
 SCEN=(--regress-script=1:3 --regress-seed=32402394 --regress-detail=2)
+# MSYS2 converts a leading /path in --opt=/path arguments for native programs, but not
+# the N:/path form of --regress-snapshot (it would treat it as a path list), so pass
+# those as native paths.
+native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
 run() { # label frames [args...]
 	local l=$1 n=$2; shift 2
 	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" "${SCEN[@]}" --regress-frames="$n" \
@@ -316,7 +320,7 @@ SNAPS=()
 snap_screen() { # label screen
 	local l=$1 s=$2
 	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-screen="$s" \
-		--regress-bike-set=enabled=1,surge_special=1 --regress-frames=40 --regress-snapshot=30:"$OUT/$l.bmp" \
+		--regress-bike-set=enabled=1,surge_special=1 --regress-frames=40 --regress-snapshot=30:"$(native_path "$OUT/$l.bmp")" \
 		>"$OUT/$l.log" 2>&1 || fail "$l" "the screen run exited with $?"
 	[ -s "$OUT/$l.bmp" ] || fail "$l" "no snapshot was written"
 	SNAPS+=("$l")
@@ -330,20 +334,20 @@ echo "PASS bike-menu-screens: Setup menu, stepper walk and address edit render a
 # HUD on vs off: presentation only, so the state hashes must be identical.
 HUDARGS=(--regress-bike-feed=const:230,92 --regress-modern --regress-aspect=16:9)
 run hud0 700 "${HUDARGS[@]}" --regress-bike-set=hud=0
-run hud1 700 "${HUDARGS[@]}" --regress-bike-set=hud=1 --regress-snapshot=650:"$OUT/snap-hud-modern.bmp"
+run hud1 700 "${HUDARGS[@]}" --regress-bike-set=hud=1 --regress-snapshot=650:"$(native_path "$OUT/snap-hud-modern.bmp")"
 cmp -s "$OUT/hud0.s" "$OUT/hud1.s" || fail hud "the HUD changed the state hashes"
 cmp -s "$OUT/hud0.f" "$OUT/hud1.f" && fail hud "the HUD did not change the frames"
 # Touch zones on the panels: presentation only (state hashes of the HUD run), and they change the frames.
-run hudt 700 "${HUDARGS[@]}" --regress-bike-set=hud=1,touch=1,autofire=toggle --regress-snapshot=650:"$OUT/snap-hud-touch.bmp"
+run hudt 700 "${HUDARGS[@]}" --regress-bike-set=hud=1,touch=1,autofire=toggle --regress-snapshot=650:"$(native_path "$OUT/snap-hud-touch.bmp")"
 cmp -s "$OUT/hud1.s" "$OUT/hudt.s" || fail hud-touch "the touch zones changed the state hashes"
 cmp -s "$OUT/hud1.f" "$OUT/hudt.f" && fail hud-touch "the touch zones did not change the frames"
-run hudc 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=1 --regress-snapshot=650:"$OUT/snap-hud-classic.bmp"
+run hudc 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=1 --regress-snapshot=650:"$(native_path "$OUT/snap-hud-classic.bmp")"
 run hudc0 700 --regress-bike-feed=const:230,92 --regress-bike-set=hud=0
 cmp -s "$OUT/hudc0.s" "$OUT/hudc.s" || fail hud-classic "the Classic HUD changed the state hashes"
 cmp -s "$OUT/hudc0.f" "$OUT/hudc.f" && fail hud-classic "the Classic HUD did not change the frames"
 run hudsurge 2400 "${HUDARGS[@]}" --regress-bike-feed="$FEEDS/surge.csv" --regress-bike-set=hud=1 \
-	--regress-snapshot=2350:"$OUT/snap-hud-surge.bmp"
-run ingame 700 --regress-menu=bike --regress-bike-set=enabled=1 --regress-snapshot=699:"$OUT/snap-ingame-bike.bmp"
+	--regress-snapshot=2350:"$(native_path "$OUT/snap-hud-surge.bmp")"
+run ingame 700 --regress-menu=bike --regress-bike-set=enabled=1 --regress-snapshot=699:"$(native_path "$OUT/snap-ingame-bike.bmp")"
 for l in snap-hud-modern snap-hud-classic snap-hud-surge snap-ingame-bike snap-hud-touch; do
 	[ -s "$OUT/$l.bmp" ] || fail "$l" "no snapshot was written"
 	SNAPS+=("$l")
