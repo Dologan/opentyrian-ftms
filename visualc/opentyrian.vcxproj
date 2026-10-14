@@ -142,6 +142,7 @@
     <ClCompile Include="..\src\bike_effort.c" />
     <ClCompile Include="..\src\bike_feed.c" />
     <ClCompile Include="..\src\bike_rules.c" />
+    <ClCompile Include="..\src\bike_ws.c" />
     <ClCompile Include="..\src\game_rules.c" />
     <ClCompile Include="..\src\game_variant.c" />
     <ClCompile Include="..\src\file.c" />
@@ -234,6 +235,7 @@
     <ClInclude Include="..\src\bike_effort.h" />
     <ClInclude Include="..\src\bike_feed.h" />
     <ClInclude Include="..\src\bike_rules.h" />
+    <ClInclude Include="..\src\bike_ws.h" />
     <ClInclude Include="..\src\game_rules.h" />
     <ClInclude Include="..\src\game_variant.h" />
     <ClInclude Include="..\src\file.h" />
