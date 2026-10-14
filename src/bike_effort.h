@@ -2,7 +2,7 @@
  * bike_effort.h - fixed-point effort engine for the exercise-bike integration.
  *
  * Port of Flywheel's game/src/core/effort/effort-engine.ts and filters.ts
- * (Flywheel, GPL-2.0-or-later) to pure C99 integer arithmetic: Q16.16 values,
+ * (Flywheel, MIT) to pure C99 integer arithmetic: Q16.16 values,
  * microsecond time, no floating point, so every platform produces identical
  * state.  Zones, streak, compliance, the power model and level inference of the
  * TypeScript engine are intentionally not ported.

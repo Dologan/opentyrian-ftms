@@ -3,7 +3,7 @@
  *
  * New code for the exercise-bike integration; the feed format is shared with the
  * golden-fixture generator (tools/bike/golden/gen_effort_golden.mjs) from
- * Flywheel (GPL-2.0-or-later) so both read the same CSVs.
+ * Flywheel (MIT) so both read the same CSVs.
  */
 #include "bike_feed.h"
 

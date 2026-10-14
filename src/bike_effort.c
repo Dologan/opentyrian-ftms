@@ -2,7 +2,7 @@
  * bike_effort.c - fixed-point effort engine.
  *
  * Port of Flywheel's game/src/core/effort/effort-engine.ts and
- * game/src/core/effort/filters.ts (Flywheel, GPL-2.0-or-later).  This is a
+ * game/src/core/effort/filters.ts (Flywheel, MIT).  This is a
  * port: the TypeScript is the behavioural reference and the golden fixtures in
  * test/bike/golden are produced by running it.
  *
