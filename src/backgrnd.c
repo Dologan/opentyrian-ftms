@@ -23,6 +23,7 @@
 #include "modern.h"
 #include "mtrand.h"
 #include "opentyr.h"
+#include "swar.h"
 #include "video.h"
 
 #include <assert.h>
@@ -68,6 +69,81 @@ void drawlist_apply_darken(SDL_Surface *surface, JE_word neat)
 	}
 }
 
+// Copy one 24-pixel tile row, skipping source pixels that are 0 (transparent).
+// SWAR where the lanes allow; identical result to the scalar loop.
+static inline void blit_tile_row24(Uint8 *dst, const Uint8 *src)
+{
+#if SWAR8_LANES > 2
+	for (int tx = 24; tx > 0; tx -= sizeof(Swar8))
+	{
+		Swar8 dstPixels = swar8Read(dst);
+		Swar8 srcPixels = swar8Read(src);
+
+		// Mask is 0xFF if pixel is not 0x00, otherwise 0x00.
+		Swar8 bit7 = (srcPixels & SWAR8(0x7F)) + SWAR8(0x7F);
+		Swar8 bit = (srcPixels | bit7) & SWAR8(0x80);
+		Swar8 mask = bit | (bit - (bit >> 7));
+
+		// Conditionally select each lane by mask.
+		dstPixels ^= (dstPixels ^ srcPixels) & mask;
+
+		swar8Write(dst, dstPixels);
+
+		src += sizeof(Swar8);
+		dst += sizeof(Swar8);
+	}
+#else
+	for (int tx = 24; tx > 0; --tx)
+	{
+		if (*src != 0)
+			*dst = *src;
+		++src;
+		++dst;
+	}
+#endif
+}
+
+// Same, but blends: hue of the source, value is the average of the source and
+// destination values.
+static inline void blit_tile_row24_blend(Uint8 *dst, const Uint8 *src)
+{
+#if SWAR8_LANES > 2
+	for (int tx = 24; tx > 0; tx -= sizeof(Swar8))
+	{
+		Swar8 dstPixels = swar8Read(dst);
+		Swar8 srcPixels = swar8Read(src);
+
+		// Mask is 0xFF if pixel is not 0x00, otherwise 0x00.
+		Swar8 bit7 = (srcPixels & SWAR8(0x7F)) + SWAR8(0x7F);
+		Swar8 bit = (srcPixels | bit7) & SWAR8(0x80);
+		Swar8 mask = bit | (bit - (bit >> 7));
+
+		const Swar8 huesMask = SWAR8(0xF0);
+		Swar8 hues = srcPixels & huesMask;
+		const Swar8 valuesMask = SWAR8(0x0F);
+		Swar8 values = srcPixels & valuesMask;
+		values += dstPixels & valuesMask;
+		values = (values >> 1) & valuesMask;
+		srcPixels = hues | values;
+
+		dstPixels ^= (dstPixels ^ srcPixels) & mask;
+
+		swar8Write(dst, dstPixels);
+
+		src += sizeof(Swar8);
+		dst += sizeof(Swar8);
+	}
+#else
+	for (int tx = 24; tx > 0; --tx)
+	{
+		if (*src != 0)
+			*dst = (*src & 0xf0) | (((*dst & 0x0f) + (*src & 0x0f)) / 2);
+		++src;
+		++dst;
+	}
+#endif
+}
+
 void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map)
 {
 	drawlist_record_bg_row(surface, x, y, map, false);
@@ -99,6 +175,14 @@ void blit_background_row(SDL_Surface *surface, int x, int y, Uint8 **map)
 			}
 			
 			data += y * 24;
+			
+			// Whole tile row on screen: no per-pixel clipping needed.
+			if (pixels >= pixels_ll && pixels + 24 <= pixels_ul)
+			{
+				blit_tile_row24(pixels, data);
+				pixels += 24;
+				continue;
+			}
 			
 			for (int x = 24; x; x--)
 			{
@@ -147,6 +231,14 @@ void blit_background_row_blend(SDL_Surface *surface, int x, int y, Uint8 **map)
 			}
 			
 			data += y * 24;
+			
+			// Whole tile row on screen: no per-pixel clipping needed.
+			if (pixels >= pixels_ll && pixels + 24 <= pixels_ul)
+			{
+				blit_tile_row24_blend(pixels, data);
+				pixels += 24;
+				continue;
+			}
 			
 			for (int x = 24; x; x--)
 			{
@@ -271,6 +363,165 @@ void draw_background_3(SDL_Surface *surface)
 	}
 }
 
+static void filterScreenHue(SDL_Surface *screen, Uint8 hue)
+{
+	Uint8 *screen_pixels = screen->pixels;
+	int screen_pitch = screen->pitch;
+
+	// Hue is configurable.  Value is unmodified.
+
+	hue = hue << 4;
+	Swar8 hues = SWAR8(hue);
+
+	size_t i = 24;
+
+	for (int y = 184; y > 0; --y)
+	{
+		for (int x = 264; x > 0; x -= sizeof(Swar8))
+		{
+			const Swar8 valuesMask = SWAR8(0x0F);
+			Swar8 values = swar8Read(&screen_pixels[i]) & valuesMask;
+			swar8Write(&screen_pixels[i], hues | values);
+
+			i += sizeof(Swar8);
+		}
+
+		i += screen_pitch - 264;
+	}
+}
+
+static void filterScreenValue(SDL_Surface *screen, Sint8 brightness)
+{
+	Uint8 *screen_pixels = screen->pixels;
+	int screen_pitch = screen->pitch;
+
+	// Hue is unmodified.  Value is sum of value and brightness if sum is
+	// 0x0..0xF, 0xF if sum is 0x10..0x1E, and 0x0 otherwise.
+
+	if (brightness == 0)
+		return;
+
+	size_t i = 24;
+
+	if (brightness <= -0xF || brightness > 0x1E)
+	{
+		// In this case, value will always be 0x0.
+
+		for (int y = 184; y > 0; --y)
+		{
+			for (int x = 264; x > 0; x -= sizeof(Swar8))
+			{
+				Swar8 pixels = swar8Read(&screen_pixels[i]);
+				const Swar8 huesMask = SWAR8(0xF0);
+				Swar8 hues = pixels & huesMask;
+
+				swar8Write(&screen_pixels[i], hues);
+
+				i += sizeof(Swar8);
+			}
+
+			i += screen_pitch - 264;
+		}
+	}
+	else if (brightness <= 0)  // -0xE..0x0
+	{
+		// In this case, value will be the sum or 0x0 on overflow (borrow).
+
+		// Addend is 0x02..0x10.  Only lower nibble of sum needs to be
+		// correct, so adding 0x10 does not affect the sum.
+		Swar8 addend = SWAR8((Uint8)(brightness + 0x10));
+
+		for (int y = 184; y > 0; --y)
+		{
+			for (int x = 264; x > 0; x -= sizeof(Swar8))
+			{
+				Swar8 pixels = swar8Read(&screen_pixels[i]);
+				const Swar8 huesMask = SWAR8(0xF0);
+				Swar8 hues = pixels & huesMask;
+				const Swar8 valuesMask = SWAR8(0x0F);
+				Swar8 values = pixels & valuesMask;
+
+				Swar8 sum = values + addend;
+
+				// Mask is 0x0F if value + brightness >= 0x00, otherwise 0x00.
+				Swar8 bit = sum & SWAR8(0x10);
+				Swar8 mask = bit - (bit >> 4);
+				values = sum & mask;
+
+				swar8Write(&screen_pixels[i], hues | values);
+
+				i += sizeof(Swar8);
+			}
+
+			i += screen_pitch - 264;
+		}
+	}
+	else if (brightness <= 0xF)  // 0x1..0xF
+	{
+		// In this case, value will be the sum or 0xF on overflow (carry).
+
+		// Addend is 0x01..0x0F.
+		Swar8 addend = SWAR8((Uint8)brightness);
+
+		for (int y = 184; y > 0; --y)
+		{
+			for (int x = 264; x > 0; x -= sizeof(Swar8))
+			{
+				Swar8 pixels = swar8Read(&screen_pixels[i]);
+				const Swar8 huesMask = SWAR8(0xF0);
+				Swar8 hues = pixels & huesMask;
+				const Swar8 valuesMask = SWAR8(0x0F);
+				Swar8 values = pixels & valuesMask;
+
+				Swar8 sum = values + addend;
+
+				// Mask is 0x0F if value + brightness >= 0x10, otherwise 0x00.
+				Swar8 bit = sum & SWAR8(0x10);
+				Swar8 mask = bit - (bit >> 4);
+				values = (sum & SWAR8(0x0F)) | mask;
+
+				swar8Write(&screen_pixels[i], hues | values);
+
+				i += sizeof(Swar8);
+			}
+
+			i += screen_pitch - 264;
+		}
+	}
+	else  // 0x10..0x1E
+	{
+		// In this case, value will be either 0xF or 0x0.
+
+		// Addend is 0x01..0x0F.
+		Swar8 addend = SWAR8((Uint8)(brightness - 0xF));
+
+		for (int y = 184; y > 0; --y)
+		{
+			for (int x = 264; x > 0; x -= sizeof(Swar8))
+			{
+				Swar8 pixels = swar8Read(&screen_pixels[i]);
+				const Swar8 huesMask = SWAR8(0xF0);
+				Swar8 hues = pixels & huesMask;
+				const Swar8 valuesMask = SWAR8(0x0F);
+				Swar8 values = pixels & valuesMask;
+
+				Swar8 sum = values + addend;
+
+				// Mask is 0x0F if value + brightness >= 0x1F, otherwise 0x00.
+				Swar8 bit = sum & SWAR8(0x10);
+				Swar8 mask = bit - (bit >> 4);
+				values = SWAR8(0x0F) & ~mask;
+
+				swar8Write(&screen_pixels[i], hues | values);
+
+				i += sizeof(Swar8);
+			}
+
+			i += screen_pitch - 264;
+		}
+	}
+}
+
 void JE_filterScreen(JE_shortint col, JE_shortint int_)
 {
 	// Whether this applied offset is a step of a brightness ramp.  Captured
@@ -303,49 +554,16 @@ void JE_filterScreen(JE_shortint col, JE_shortint int_)
 // the replay does not advance levelBrightness/filterFade.
 void drawlist_apply_filter_screen(SDL_Surface *surface, JE_shortint col, JE_shortint int_)
 {
-	Uint8 *s = NULL; /* screen pointer, 8-bit specific */
-	int x, y;
-	unsigned int temp;
-
 	// The Modern compositor recomposes the HUD panels/message strip from
 	// separate surfaces; report the brightness offset baked into this playfield
 	// so it can mirror the fade on them.  Display-only.
 	modern_note_playfield_filter(int_);
 
 	if (col != -99 && filtrationAvail)
-	{
-		s = surface->pixels;
-		s += 24;
-		
-		col <<= 4;
-		
-		for (y = 184; y; y--)
-		{
-			for (x = 264; x; x--)
-			{
-				*s = col | (*s & 0x0f);
-				s++;
-			}
-			s += surface->pitch - 264;
-		}
-	}
+		filterScreenHue(surface, (Uint8)col);
 	
 	if (int_ != -99 && explosionTransparent)
-	{
-		s = surface->pixels;
-		s += 24;
-		
-		for (y = 184; y; y--)
-		{
-			for (x = 264; x; x--)
-			{
-				temp = (*s & 0x0f) + int_;
-				*s = (*s & 0xf0) | (temp >= 0x1f ? 0 : (temp >= 0x0f ? 0x0f : temp));
-				s++;
-			}
-			s += surface->pitch - 264;
-		}
-	}
+		filterScreenValue(surface, int_);
 }
 
 void JE_checkSmoothies(void)
@@ -464,16 +682,19 @@ void iced_blur_filter(SDL_Surface *dst, SDL_Surface *src)
 	
 	for (int y = 0; y < 184; ++y)
 	{
-		for (int x = 0; x < 320; ++x)
+		for (int x = 0; x < 320; x += sizeof(Swar8))
 		{
 			// value is average value of source pixel and destination pixel
 			// hue is icy blue
 			
-			const Uint8 value = (*src_pixel & 0x0f) + (*dst_pixel & 0x0f);
-			*dst_pixel = (value / 2) | 0x80;
+			const Swar8 valuesMask = SWAR8(0x0F);
+			Swar8 values = swar8Read(src_pixel) & valuesMask;
+			values += swar8Read(dst_pixel) & valuesMask;
+			values = (values >> 1) & valuesMask;
+			swar8Write(dst_pixel, SWAR8(0x80) | values);
 			
-			++dst_pixel;
-			++src_pixel;
+			dst_pixel += sizeof(Swar8);
+			src_pixel += sizeof(Swar8);
 		}
 		
 		dst_pixel += (dst->pitch - 320);  // in case pitch is not 320
@@ -492,16 +713,20 @@ void blur_filter(SDL_Surface *dst, SDL_Surface *src)
 	
 	for (int y = 0; y < 184; ++y)
 	{
-		for (int x = 0; x < 320; ++x)
+		for (int x = 0; x < 320; x += sizeof(Swar8))
 		{
 			// value is average value of source pixel and destination pixel
 			// hue is source pixel hue
 			
-			const Uint8 value = (*src_pixel & 0x0f) + (*dst_pixel & 0x0f);
-			*dst_pixel = (value / 2) | (*src_pixel & 0xf0);
+			const Swar8 srcPixels = swar8Read(src_pixel);
+			const Swar8 valuesMask = SWAR8(0x0F);
+			Swar8 values = srcPixels & valuesMask;
+			values += swar8Read(dst_pixel) & valuesMask;
+			values = (values >> 1) & valuesMask;
+			swar8Write(dst_pixel, (srcPixels & SWAR8(0xF0)) | values);
 			
-			++dst_pixel;
-			++src_pixel;
+			dst_pixel += sizeof(Swar8);
+			src_pixel += sizeof(Swar8);
 		}
 		
 		dst_pixel += (dst->pitch - 320);  // in case pitch is not 320
