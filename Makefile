@@ -261,6 +261,6 @@ obj/launcher_art.o : obj/launcher_art.c
 
 obj/third_party/miniz/miniz.o : ALL_CFLAGS += -Wno-error -w $(MINIZ_DEFINES)
 
-obj/resources.o : visualc/resources.rc visualc/tyrian.ico
+obj/resources.o : visualc/resources.rc visualc/tyrian.ico visualc/opentyrian.manifest
 	@mkdir -p "$(dir $@)"
 	$(WINDRES) --include-dir visualc -i $< -o $@
