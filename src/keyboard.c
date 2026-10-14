@@ -20,6 +20,7 @@
 
 #include "bike.h"
 #include "bike_controls.h"
+#include "bike_touch.h"
 #include "joystick.h"
 #include "logging.h"
 #include "mouse.h"
@@ -205,6 +206,11 @@ void handleSdlEvents(void)
 		if (regress_active() && ev.type != SDL_EVENT_QUIT)
 			continue;
 
+		// Touch controls (T3b.3): finger events, and the mouse events SDL
+		// synthesizes from a finger that is steering or tapping a zone in play.
+		if (bike_touch_filter(&ev))
+			continue;
+
 		switch (ev.type)
 		{
 			case SDL_EVENT_WINDOW_FOCUS_LOST:
@@ -376,7 +382,8 @@ void handleSdlEvents(void)
 
 				// Remote mode: pointer drift must not move menu focus or show the
 				// pointer; the relative motion above still steers the ship.
-				if ((ev.motion.xrel != 0 || ev.motion.yrel != 0) && !bike_controls_remote())
+				if ((ev.motion.xrel != 0 || ev.motion.yrel != 0) &&
+				    (!bike_controls_remote() || bike_touch_is_touch_mouse(ev.motion.which)))
 				{
 					mouseHasMotionInput = true;
 
@@ -391,7 +398,9 @@ void handleSdlEvents(void)
 
 				// Remote mode: OK (left) and Back (right) become Enter and Esc, acting
 				// on the focused row; other buttons are dropped.
-				const int remoteKey = bike_controls_remote_button_key(ev.button.button);
+				// A finger tap is never translated: menus act on the row under it.
+				const int remoteKey = bike_touch_is_touch_mouse(ev.button.which) ? 0
+				                    : bike_controls_remote_button_key(ev.button.button);
 				if (remoteKey != 0)
 				{
 					if (remoteKey > 0 && keyboardInputsCount < COUNTOF(keyboardInputs))

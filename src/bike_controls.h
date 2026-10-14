@@ -40,8 +40,9 @@ bool bike_autofire_held_back(void);
  * '#' comments).  Actions: autofire_toggle, autofire_on, autofire_off,
  * set (a = "key=value"), fire_on, fire_off (injected manual fire), mouse_move,dx,dy (one-shot
  * pointer motion), mouse_drive,dx,dy (per-frame motion until changed), mouse_down/mouse_up,l|r|m,
- * key_down/key_up,play_pause|next|prev (injected media keys), immortal (regress: youAreCheating), equip (regress only: special=N,
- * sidekicks=L/R, shield=N on player 1). */
+ * key_down/key_up,play_pause|next|prev (injected media keys), finger_down/finger_move,id,x,y and
+ * finger_up,id (touch, T3b.3; x and y in 1/1000 of the window), immortal (regress: youAreCheating), equip (regress only: special=N,
+ * sidekicks=L/R, rear=N, shield=N on player 1). */
 bool bike_controls_events_load(const char *path);
 
 /* Regress state: true once the latch was ever set, so

@@ -19,6 +19,7 @@
 #include "modern_hud.h"
 
 #include "bike.h"
+#include "bike_touch.h"
 #include "config.h"
 #include "episodes.h"
 #include "fonthand.h"
@@ -1154,6 +1155,34 @@ void modern_hud_draw_progress(void)
 	hud_draw_message_strip();
 }
 
+// Touch tap zones (exercise-bike integration, T3b.3; presentation only).  Drawn
+// only while touch controls are on in single-player play: a dotted line where
+// two zones meet and a small label at the inner edge of each zone, brighter
+// while the zone is held (or auto-fire is on) and dim when unavailable.  Reads
+// bike_touch_zone_info() and writes only the panel surfaces.
+static void hud_draw_touch_zones(const HudPanel *left, const HudPanel *right)
+{
+	if (!bike_touch_zones_visible())
+		return;
+
+	for (int i = 0; i < bike_touch_zone_count(); ++i)
+	{
+		BikeTouchZone z;
+		if (!bike_touch_zone_info(i, &z))
+			continue;
+
+		const HudPanel *p = z.right ? right : left;
+		const int label_w = JE_textWidth(z.label, TINY_FONT);
+		const int x = z.right ? HUD_MARGIN : p->w - HUD_MARGIN - label_w;
+		const int y = z.y1 - 8;
+
+		if (z.y0 > 0)
+			for (int dx = 0; dx < p->w; dx += 2)
+				fill_rectangle_xy(p->surface, dx, z.y0, dx, z.y0, HUD_SEP_COLOR);
+		hud_text(p->surface, x, y, z.label, HUD_LABEL_BANK, z.dim ? HUD_LABEL_DIM : (z.lit ? HUD_VALUE_BRIGHT : 5));
+	}
+}
+
 void modern_hud_draw(void)
 {
 	if (!modern_hud_in_panels())
@@ -1184,6 +1213,7 @@ void modern_hud_draw(void)
 
 		hud_draw_armament_panel(&left);
 		hud_draw_status_panel(&right);
+		hud_draw_touch_zones(&left, &right);
 	}
 
 	hud_draw_message_strip();

@@ -1,0 +1,7 @@
+# touch controls (T3b.3): a tap on the BOMB zone (right panel, top): both sidekick buttons
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
+20,finger_down,1,970,100
+60,finger_up,1

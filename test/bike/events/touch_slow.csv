@@ -1,0 +1,9 @@
+# touch controls (T3b.3): a slow two-finger touch does nothing
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
+100,finger_down,1,450,500
+101,finger_down,2,550,500
+200,finger_up,1
+200,finger_up,2

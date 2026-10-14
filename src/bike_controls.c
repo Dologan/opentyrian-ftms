@@ -18,6 +18,7 @@
 #include "bike_controls.h"
 
 #include "bike.h"
+#include "bike_touch.h"
 #include "joystick.h"
 #include "keyboard.h"
 #include "mainint.h"
@@ -37,7 +38,8 @@
 static const SDL_GamepadButton pad_toggle_buttons[] = { SDL_GAMEPAD_BUTTON_RIGHT_STICK };
 
 typedef enum { EV_TOGGLE, EV_ON, EV_OFF, EV_SET, EV_EQUIP, EV_FIRE_ON, EV_FIRE_OFF, EV_IMMORTAL,
-		EV_MOUSE_MOVE, EV_MOUSE_DRIVE, EV_MOUSE_DOWN, EV_MOUSE_UP, EV_KEY_DOWN, EV_KEY_UP } EventKind;
+		EV_MOUSE_MOVE, EV_MOUSE_DRIVE, EV_MOUSE_DOWN, EV_MOUSE_UP, EV_KEY_DOWN, EV_KEY_UP,
+		EV_FINGER } EventKind;
 
 typedef struct
 {
@@ -255,6 +257,21 @@ static void apply_event(const InjectedEvent *e)
 		inj_media[w] = e->kind == EV_KEY_DOWN;
 		break;
 	}
+	case EV_FINGER: /* arg = "finger_xxx,id,x,y" (touch, T3b.3) */
+	{
+		const char *comma = strchr(e->arg, ',');
+		char name[16];
+
+		if (comma != NULL && (size_t)(comma - e->arg) < sizeof name)
+		{
+			memcpy(name, e->arg, (size_t)(comma - e->arg));
+			name[comma - e->arg] = '\0';
+			if (bike_touch_inject(name, comma + 1, e->tick))
+				break;
+		}
+		logWarn("bike events: bad finger event '%s'", e->arg);
+		break;
+	}
 	case EV_IMMORTAL: /* regress only: the engine's own invincibility flag, so the ship outlives the level */
 		youAreCheating = true;
 		break;
@@ -277,6 +294,8 @@ static void apply_event(const InjectedEvent *e)
 				player[0].items.sidekick[RIGHT_SIDEKICK] = (JE_byte)r;
 			}
 		}
+		else if (strncmp(e->arg, "rear=", 5) == 0)
+			player[0].items.weapon[REAR_WEAPON].id = (JE_word)atoi(e->arg + 5);
 		else if (strncmp(e->arg, "shield=", 7) == 0)
 		{
 			/* shield item N, drained to 0 so the regen path has work to do */
@@ -323,6 +342,7 @@ void bike_controls_frame(void)
 		apply_event(&events[event_next++]);
 
 	remote_frame();
+	bike_touch_frame();
 
 	if (!bike_settings.autofire)
 		latch = false;
@@ -368,6 +388,7 @@ void bike_controls_log_coverage(void)
 {
 	logInfo("Bike autofire: toggles=%lu fired=%lu held=%lu", toggles, fired_frames, held_frames);
 	logInfo("Bike air: moved=%lu menu_opens=%lu pauses=%lu media=%lu", moved_units, menu_opens, pauses, media_presses);
+	bike_touch_log_coverage(); /* after the air line: check_bike.sh reads the first match of a key */
 }
 
 bool bike_controls_events_load(const char *path)
@@ -426,6 +447,11 @@ bool bike_controls_events_load(const char *path)
 		          (strcmp(act, "key_down") == 0 && (e.kind = EV_KEY_DOWN, true)) ||
 		          (strcmp(act, "key_up") == 0 && (e.kind = EV_KEY_UP, true))))
 			strcpy(e.arg, rest);
+		else if (rest != NULL && strncmp(act, "finger_", 7) == 0 && strlen(act) < 13 && strlen(rest) + strlen(act) + 2 < sizeof e.arg)
+		{
+			e.kind = EV_FINGER;
+			sprintf(e.arg, "%s,%s", act, rest);
+		}
 		else if ((strcmp(act, "set") == 0 || strcmp(act, "equip") == 0) && rest != NULL && strlen(rest) < sizeof e.arg)
 		{
 			e.kind = strcmp(act, "set") == 0 ? EV_SET : EV_EQUIP;
