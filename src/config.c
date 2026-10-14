@@ -32,6 +32,7 @@
 #include "memwriter.h"
 #include "modern.h"
 #include "modern_bloom.h"
+#include "bike.h"
 #include "modern_depth.h"
 #include "mouse_buttons.h"
 #include "mtrand.h"
@@ -419,6 +420,8 @@ static void loadOpenTyrianConfig(void)
 			starfield_set_speed_percent(starfield_percent);
 	}
 
+	bike_config_load();
+
 	section = config_find_section(config, "launcher", NULL);
 	if (section != NULL)
 	{
@@ -484,6 +487,8 @@ static void saveOpenTyrianConfig(void)
 
 	config_set_string_option(section, "lighting", modern_quality_names[modern_lighting_quality]);
 	config_set_string_option(section, "modern_depth", modern_depth_names[modern_depth_quality]);
+
+	bike_config_save();
 
 	if (launcherLastVariant >= 0)
 	{

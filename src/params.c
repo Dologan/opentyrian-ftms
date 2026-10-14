@@ -20,6 +20,7 @@
 
 #include "arg_parse.h"
 #include "backgrnd.h"
+#include "bike.h"
 #include "demo.h"
 #include "episodes.h"
 #include "file.h"
@@ -157,6 +158,13 @@ const Options *JE_paramOptions(void)
 		{ 306, 0,   "regress-stick",     true },
 		{ 307, 0,   "regress-stick-log", true },
 		{ 308, 0,   "regress-reverse-y", false },
+		
+		{ 440, 0,   "regress-bike-feed", true },
+		{ 441, 0,   "regress-bike-log",  true },
+		{ 442, 0,   "regress-bike-set",  true },
+		{ 450, 0,   "ftms-bridge",       true },
+		{ 451, 0,   "ftms-ftp",          true },
+		{ 452, 0,   "ftms-off",          false },
 		
 		{ 0, 0, NULL, false }
 	};
@@ -331,6 +339,12 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-stick-log=FILE     Log the per-tick ship x/y and x/y velocity of a");
 			logInfo("                               --regress-stick run to FILE");
 			logInfo("  --regress-reverse-y          Regress only: force the reverse-controls smoothie on");
+			logInfo("  --regress-bike-feed=FILE|const:W[,RPM]  Regress only: scripted bike feed (tick,watts,cadence,connected)");
+			logInfo("  --regress-bike-log=FILE      Regress only: per-tick bike log");
+			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
+			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
+			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
+			logInfo("  --ftms-off                   Force the bike features off for this run");
 			logInfo("  --regress-front-weapon=N      Regress only: front weapon id (0-42) for --regress-script/--regress-level");
 			logInfo("  --regress-front-power=N       Regress only: front weapon power (1-11) for --regress-script/--regress-level");
 			logInfo("  --regress-rules=NAME          Code-owned gameplay fixture: events, spawn, sidekicks, twiddle, punch");
@@ -923,6 +937,60 @@ void JE_paramCheck(int argc, char *argv[])
 
 		case 308: // --regress-reverse-y
 			regress_reverse_y = 1;
+			break;
+
+		case 440: // --regress-bike-feed=FILE|const:W[,RPM]
+			if (!bike_script_load(option.arg))
+				exit(EXIT_FAILURE);
+			break;
+
+		case 441: // --regress-bike-log=FILE
+			bike_log_open(option.arg);
+			break;
+
+		case 442: // --regress-bike-set=K=V[,K=V...]
+			regress_bike_set = option.arg;
+			break;
+
+		case 450: // --ftms-bridge=HOST[:PORT]
+		{
+			char host[sizeof bike_settings.bridge_host + 8];
+			char *colon;
+
+			if (strlen(option.arg) >= sizeof host)
+			{
+				logError("%s: --ftms-bridge address is too long", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			strcpy(host, option.arg);
+			colon = strrchr(host, ':');
+			if (colon != NULL)
+			{
+				*colon = '\0';
+				if (!bike_settings_set("bridge_port", colon + 1))
+				{
+					logError("%s: --ftms-bridge port must be 1-65535", argv[0]);
+					exit(EXIT_FAILURE);
+				}
+			}
+			if (!bike_settings_set("bridge_host", host))
+			{
+				logError("%s: --ftms-bridge needs a host name (at most %d characters)", argv[0], (int)sizeof bike_settings.bridge_host - 1);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
+
+		case 451: // --ftms-ftp=W
+			if (!bike_settings_set("ftp", option.arg))
+			{
+				logError("%s: --ftms-ftp must be 50-500 watts", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 452: // --ftms-off
+			bike_force_off();
 			break;
 
 		default:

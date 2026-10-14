@@ -20,6 +20,8 @@
 
 #include "animlib.h"
 #include "backgrnd.h"
+#include "bike.h"
+#include "bike_rules.h"
 #include "demo.h"
 #include "drawlist.h"
 #include "episodes.h"
@@ -613,6 +615,7 @@ void JE_main(void)
 
 start_level:
 
+	bike_level_end();
 	modern_progress_resolve_end();
 
 	keyboardClearInput();
@@ -833,6 +836,7 @@ start_level_first:
 	backPos2 = 0;
 	backPos3 = 0;
 	power = 0;
+	bike_level_start();
 	starfield_speed = 1;
 
 	/* Setup player ship graphics */
@@ -1052,6 +1056,8 @@ start_level_first:
 
 level_loop:
 
+	bike_frame_tick();
+
 	//tempScreenSeg = game_screen; /* side-effect of game_screen */
 
 	if (isNetworkGame)
@@ -1200,9 +1206,12 @@ level_loop:
 		}
 		else
 		{
-			power += powerAdd;
+			const unsigned refill = bike_generator_on() ? bike_rules_power_add(powerAdd) : powerAdd;
+			power += refill;
 			if (power > 900)
 				power = 900;
+			if (bike_log_active())
+				bike_log_refill(refill, power);
 
 			temp = power / 10;
 
