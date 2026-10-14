@@ -2261,6 +2261,7 @@ draw_player_shot_loop_end:
 		switch (regress_take_menu_request())
 		{
 		case REGRESS_MENU_INGAME:
+		case REGRESS_MENU_BIKE:
 			ingamemenu_pressed = true;
 			break;
 		case REGRESS_MENU_PAUSE:
