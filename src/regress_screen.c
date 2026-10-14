@@ -28,6 +28,7 @@
 // input ever reaches the menu logic (handleSdlEvents() drops it in regress
 // mode), so the rendered screen does not advance.
 #include "regress.h"
+#include "bike_menu.h"
 
 #include "config.h"
 #include "episodes.h"
@@ -487,6 +488,18 @@ void regress_screen_run(void)
 		// The in-game Setup screen's Graphics submenu, which carries the
 		// presentation/aspect/pixel-aspect/smooth-motion pickers.
 		setupMenuStartAt(SETUP_MENU_GRAPHICS);
+		setupMenu();
+	}
+	else if (screen_is("bike-menu") || screen_is("bike-menu-nav") || screen_is("bike-menu-edit"))
+	{
+		// The Bike and Controls setup screen (bike_menu.c).  The -nav and -edit
+		// variants queue a key script that walks to the FTP row and steps it, or
+		// edits the bridge address, so the snapshot shows the result.
+		if (screen_is("bike-menu-nav"))
+			bike_menu_regress_keys("___]]]]]]]]_]]]]]]]]_]]]]");
+		else if (screen_is("bike-menu-edit"))
+			bike_menu_regress_keys("__#<<<<<<<<<<<<<<10.0.0.5:8788");
+		setupMenuStartAt(SETUP_MENU_BIKE);
 		setupMenu();
 	}
 	else if (screen_is("nav-map"))

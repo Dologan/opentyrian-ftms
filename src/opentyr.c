@@ -19,6 +19,7 @@
 #include "opentyr.h"
 
 #include "bike.h"
+#include "bike_menu.h"
 #include "bootstrap.h"
 #include "config.h"
 #include "crt_filter.h"
@@ -264,6 +265,7 @@ void setupMenu(void)
 		MENU_ITEM_DONE,
 		MENU_ITEM_GRAPHICS,
 		MENU_ITEM_SOUND,
+		MENU_ITEM_BIKE,
 		MENU_ITEM_JUKEBOX,
 		MENU_ITEM_DESTRUCT,
 		MENU_ITEM_DISPLAY,
@@ -310,6 +312,7 @@ void setupMenu(void)
 			.items = {
 				{ MENU_ITEM_GRAPHICS, "Graphics...", "Change the graphics settings." },
 				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
+				{ MENU_ITEM_BIKE, "Bike and Controls...", "Exercise bike power and riding controls." },
 				{ MENU_ITEM_JUKEBOX, "Jukebox", "Listen to the music of Tyrian." },
 				// { MENU_ITEM_DESTRUCT, "Destruct", "Play a bonus mini-game." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
@@ -348,6 +351,15 @@ void setupMenu(void)
 
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
+
+	if (setup_menu_start == SETUP_MENU_BIKE)
+	{
+		// The Bike and Controls list is its own scrolling screen (bike_menu.c).
+		setup_menu_start = -1;
+		bike_menu(false);
+		fade_black(10);
+		return;
+	}
 
 	bool restart = true;
 
@@ -805,6 +817,17 @@ void setupMenu(void)
 					menuParents[MENU_SOUND] = currentMenu;
 					currentMenu = MENU_SOUND;
 					selectedMenuItemIndexes[currentMenu] = 0;
+					break;
+				}
+				case MENU_ITEM_BIKE:
+				{
+					JE_playSampleNum(S_SELECT);
+
+					fade_black(10);
+
+					bike_menu(false);
+
+					restart = true;
 					break;
 				}
 				case MENU_ITEM_JUKEBOX:

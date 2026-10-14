@@ -86,6 +86,9 @@
     <ClCompile Include="..\src\bike_feed.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\bike_menu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\bike_ws.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -358,6 +361,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\bike_feed.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\bike_menu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\bike_ws.h">
