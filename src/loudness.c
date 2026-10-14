@@ -107,6 +107,7 @@ bool init_audio(void)
 	if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
 	{
 		logError("Failed to initialize SDL audio: %s", SDL_GetError());
+
 		audio_disabled = true;
 		return false;
 	}
@@ -120,6 +121,9 @@ bool init_audio(void)
 	if (audioStream == NULL)
 	{
 		logError("Failed to open audio device: %s", SDL_GetError());
+
+		SDL_QuitSubSystem(SDL_INIT_AUDIO);
+
 		audio_disabled = true;
 		return false;
 	}
