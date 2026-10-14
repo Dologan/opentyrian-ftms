@@ -1,0 +1,16 @@
+# gear for the surge cases: both sidekicks, special 10, shield 4 (drained), and fire pulses during the first surge
+# tick,action[,arg]
+0,immortal
+0,equip,sidekicks=1/2
+0,equip,special=10
+0,equip,shield=4
+2200,fire_on
+2205,fire_off
+2350,fire_on
+2355,fire_off
+2500,fire_on
+2505,fire_off
+2650,fire_on
+2655,fire_off
+2800,fire_on
+2805,fire_off
