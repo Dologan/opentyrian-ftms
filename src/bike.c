@@ -577,6 +577,82 @@ void bike_frame_tick(void)
 }
 
 const BikeHud *bike_hud(void) { return &hud; }
+
+/* ---- menu / HUD helpers --------------------------------------------------- */
+
+static unsigned q16_round_uint(bq16 v)
+{
+	return v <= 0 ? 0u : (unsigned)(((int64_t)v + 32768) >> 16);
+}
+
+const char *bike_link_name(BikeLink link)
+{
+	switch (link)
+	{
+		case BIKE_LINK_CONNECTING: return "Connecting";
+		case BIKE_LINK_WAITING: return "Connected";
+		case BIKE_LINK_STREAMING: return "Streaming";
+		case BIKE_LINK_OFF:
+		default: return "Off";
+	}
+}
+
+void bike_status(BikeStatus *out)
+{
+	const BikeSource source = bike_source();
+
+	memset(out, 0, sizeof *out);
+	if (source == BIKE_SOURCE_BRIDGE)
+	{
+		const uint64_t now = wall_us();
+
+		out->link = mailbox.link;
+		out->has_sample = mailbox.has_sample;
+		if (mailbox.has_sample)
+		{
+			out->power_valid = mailbox.latest.power_valid;
+			out->cadence_valid = mailbox.latest.cadence_valid;
+			out->watts = q16_round_uint(mailbox.latest.power_w);
+			out->rpm = q16_round_uint(mailbox.latest.cadence_rpm);
+			out->age_ms = now > mailbox.latest.arrival_us ? (uint32_t)((now - mailbox.latest.arrival_us) / 1000) : 0;
+		}
+	}
+	else if (source == BIKE_SOURCE_SCRIPT)
+	{
+		out->link = hud.link;
+		out->has_sample = have_sample;
+		out->power_valid = out->cadence_valid = have_sample;
+		out->watts = q16_round_uint(hud.watts);
+		out->rpm = q16_round_uint(hud.cadence);
+	}
+}
+
+unsigned bike_link_color(BikeLink link, bool lost)
+{
+	if (lost)
+		return 116;
+	switch (link)
+	{
+		case BIKE_LINK_STREAMING: return 202;
+		case BIKE_LINK_WAITING: return 125;
+		case BIKE_LINK_CONNECTING: return 120;
+		case BIKE_LINK_OFF:
+		default: return 8;
+	}
+}
+
+bool bike_hud_visible(void)
+{
+	return bike_settings.master && bike_settings.hud && !forced_off && hud.gate;
+}
+
+/* HUD accessor: returns whether auto-fire is on; `held` is set when the reserve is holding it back. */
+bool bike_autofire_state(bool *held)
+{
+	if (held != NULL)
+		*held = bike_autofire_held_back();
+	return bike_autofire_active();
+}
 uint32_t bike_tick_count(void) { return tick_count; }
 
 /* ---- regress hash and log ------------------------------------------------- */

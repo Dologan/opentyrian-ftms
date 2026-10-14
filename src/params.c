@@ -308,7 +308,7 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-smooth-effects-check  Per level tick, assert the interpolated palette fade and");
 			logInfo("                               HUD bars stay between the two ticks (needs --regress-modern)");
 			logInfo("  --regress-menu=NAME          Open an in-level menu on the last presented frame:");
-			logInfo("                               ingame (ESC), pause (P) or help (F1)");
+			logInfo("                               ingame (ESC), pause (P), help (F1) or bike (ingame, then the bike menu)");
 			logInfo("                               (requires --regress-script and --regress-frames)");
 			logInfo("  --starfield-speed=PERCENT    Background starfield speed as a percentage of the");
 			logInfo("                               original rate (10-100, default 25); sub-pixel motion");
@@ -894,9 +894,11 @@ void JE_paramCheck(int argc, char *argv[])
 				regress_menu_kind = REGRESS_MENU_PAUSE;
 			else if (strcmp(option.arg, "help") == 0)
 				regress_menu_kind = REGRESS_MENU_HELP;
+			else if (strcmp(option.arg, "bike") == 0)
+				regress_menu_kind = REGRESS_MENU_BIKE;
 			else
 			{
-				logError("%s: --regress-menu must be ingame, pause or help", argv[0]);
+				logError("%s: --regress-menu must be ingame, pause, help or bike", argv[0]);
 				exit(EXIT_FAILURE);
 			}
 			break;

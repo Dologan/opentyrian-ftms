@@ -13,6 +13,11 @@ Convenções:
 
 ## 2026-10-14
 
+### Bike (FTMS): menu e HUD (T2.5, T2.6)
+- **Menu:** novo `src/bike_menu.[ch]`, "Bike and Controls..." no Setup (`SETUP_MENU_BIKE`) e no menu do jogo. Lista rolável com todos os toggles do `design.md` (mestre, Bike Power, Bridge host:port com caixa de texto, FTP com passo 5 e aceleração ao segurar, Strength, Floor, quatro surges, Auto-fire, reserva 25/50%, mouse aéreo, velocidade do ponteiro, toque, HUD) e uma linha de estado ao vivo. Aplica na hora e persiste em `[ftms]`; `&` e `<` não existem nas fontes do jogo, por isso o nome é "Bike and Controls".
+- **HUD:** Modern (painel de status do 1P: ponto de link, watts, rpm, esforço, medidor de surge, AUTO/HOLD/SURGE) e Classic (ponto e watts). Só desenha com mestre e HUD ligados. `bike_autofire_state()` é um stub (falso) até o auto-fire do T3b.1.
+- **Regress:** os 207 baselines não mudaram (a linha do menu do jogo só aparece com o mestre ligado). Novos `--regress-screen=bike-menu[-nav|-edit]` e `--regress-menu=bike`; `tools/check_bike.sh` guarda os hashes dos PNGs de menu e HUD e prova que o HUD não altera o hash de estado. Capturas em `doc/ftms/screens/`.
+
 ### Bike (FTMS): núcleo no jogo (T2.2 a T2.4)
 - **Novo, opcional e desligado por padrão:** `src/bike.[ch]`, `src/bike_rules.[ch]` (o motor `bike_effort`/`bike_feed` já estava no branch). Interruptor mestre + um toggle por recurso, em `[ftms]` do `opentyrian.cfg`, na CLI (`--ftms-bridge`, `--ftms-ftp`, `--ftms-off`, ids 450–452) e no regress (`--regress-bike-feed`, `--regress-bike-log`, `--regress-bike-set`, ids 440–442).
 - **Gerador:** mapeamento C com acumulador de resto exato e mistura de volta ao stock quando o link cai (1,5 s de atraso, 1/2 por segundo). Sem fonte ou amostra o jogo usa o `powerAdd` stock. O simulador da tela de upgrade não muda.

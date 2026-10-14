@@ -116,6 +116,35 @@ Remap controls in *Setup → Keyboard / Joystick*. Menus also accept the mouse.
 For network play, use `--net HOST --net-player-name NAME --net-player-number N`
 on both machines (UDP port 1333).
 
+## Playing with an exercise bike
+
+Modern Tyrian can take power from an FTMS exercise bike through a Flywheel
+bridge. Everything is off by default, so the game plays normally unless you
+turn the bike on.
+
+You need:
+
+- a Flywheel checkout (its `bridge/` folder runs the bike link),
+- [uv](https://docs.astral.sh/uv/) on your `PATH`,
+- an FTMS bike, or none at all: `--source sim` simulates one.
+
+From the repository root, run the helper with the path to your Flywheel
+checkout (or set `FLYWHEEL_DIR`):
+
+```sh
+tools/ftms/play-with-bike.sh --flywheel ../flywheel              # real bike
+tools/ftms/play-with-bike.sh --flywheel ../flywheel --source sim # simulated bike
+```
+
+On Windows, run `tools\ftms\play-with-bike.cmd --flywheel ..\flywheel`. The
+helper starts the bridge, waits for it, launches the game with
+`--ftms-bridge=127.0.0.1:8787`, and stops the bridge when the game exits.
+Anything after `--` goes to the game.
+
+Turn the bike on in **Setup → Bike...**, which is also in the in-game menu.
+The bridge options are `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W` and
+`--ftms-off`, if you prefer to start the bridge yourself.
+
 ## <img src="docs/readme/h-build.svg" alt="Build it" width="100%">
 
 Requires a C99 compiler, GNU make, pkg-config, SDL3 and optionally SDL3_net.

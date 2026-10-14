@@ -69,6 +69,7 @@ enum
 	SETUP_MENU_SETUP = 1,
 	SETUP_MENU_GRAPHICS = 2,
 	SETUP_MENU_SOUND = 3,
+	SETUP_MENU_BIKE = 4,
 };
 
 void setupMenu(void);
