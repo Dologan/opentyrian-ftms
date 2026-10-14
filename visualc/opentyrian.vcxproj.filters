@@ -104,6 +104,9 @@
     <ClCompile Include="..\src\helptext.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\input_probe.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\interp.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -361,6 +364,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\gamepad_selftest.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\input_probe.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\helptext.h">
