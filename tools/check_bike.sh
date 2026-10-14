@@ -141,7 +141,7 @@ sg sgall surge_superbomb=1,surge_sidekick=1,surge_special=1,surge_shield=1
 for k in superbombs shield_fast sidekick_fast special_extra; do
 	[ "$(cov sgoff $k)" = 0 ] || fail surge "all surge effects off still changed $k"
 done
-[ "$(cov sgbomb superbombs)" -ge 1 ] && [ "$(cov sgbomb superbombs)" -le 10 ] || fail surge "no superbomb was granted on overdrive-ready"
+[ "$(cov sgbomb superbombs)" -ge 1 ] && [ "$(cov sgbomb superbombs)" -le 5 ] || fail surge "no superbomb was granted on overdrive-ready"
 [ "$(cov sgside sidekick_fast)" -ge 1 ] || fail surge "the sidekick charge never ran faster"
 [ "$(cov sgspec special_extra)" -ge 1 ] || fail surge "the special recharge never ran faster"
 [ "$(cov sgshield shield_fast)" -ge 1 ] || fail surge "the shield regen interval never shortened"
@@ -149,8 +149,19 @@ for k in sgbomb:shield_fast sgbomb:sidekick_fast sgbomb:special_extra sgside:sup
 	[ "$(cov "${k%%:*}" "${k##*:}")" = 0 ] || fail surge "${k%%:*} touched ${k##*:} with that effect off"
 done
 for l in sgbomb sgside sgspec sgshield sgall; do differs sgoff "$l" || fail surge "$l is not observable against the all-off run"; done
+[ "$(cov sgbomb superbombs_cooled)" -ge 1 ] || fail surge "the superbomb cooldown never held a grant back"
 grep -q "end state: .*superbombs=$(cov sgbomb superbombs) " "$OUT/sgbomb.log" || fail surge "end-state superbombs differ from the grants"
 echo "PASS bike-surge: superbombs +$(cov sgbomb superbombs), sidekick x$(cov sgside sidekick_fast), special x$(cov sgspec special_extra), shield x$(cov sgshield shield_fast) (each only with its toggle, deterministic, observable)"
+
+# Balance: a long Q200B ride fires 26 overdrive events in about 3 min; the cooldown (60 s) and cap (5) must hold the grants
+# to one per minute of play, and the cooldown setting 0 must lift the rate limit.
+case_run sgride 12000 "$FEEDS/q200b-ride2.csv" --regress-bike-set=surge_superbomb=1
+case_run sgride0 12000 "$FEEDS/q200b-ride2.csv" --regress-bike-set=surge_superbomb=1,superbomb_cooldown=0
+[ "$(cov sgride superbombs)" -ge 2 ] && [ "$(cov sgride superbombs)" -le 4 ] || fail superbomb-balance "ride2 granted $(cov sgride superbombs) superbombs in ~170 s (want 2-4: one per minute of play)"
+[ "$(cov sgride0 superbombs)" -gt "$(cov sgride superbombs)" ] && [ "$(cov sgride0 superbombs_cooled)" = 0 ] || fail superbomb-balance "cooldown 0 should lift the rate limit (grants $(cov sgride0 superbombs), cooled $(cov sgride0 superbombs_cooled))"
+held=$(sed -n 's/.*end state: .*superbombs=\([0-9]*\) .*/\1/p' "$OUT/sgride0.log" | head -n 1)
+[ "$held" -le 5 ] || fail superbomb-balance "the cap of 5 was exceeded (holding $held)"
+echo "PASS bike-superbomb-balance: ride2 grants $(cov sgride superbombs) (cooled $(cov sgride superbombs_cooled)); cooldown 0 grants $(cov sgride0 superbombs), holding $held <= 5"
 
 # --- auto-fire toggle and reserve (T3b.1) --------------------------------------
 AF="const:60"
