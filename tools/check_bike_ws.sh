@@ -7,6 +7,8 @@
 #   tools/check_bike_ws.sh [fake|blackhole|refused|live ...]   (default: all)
 #
 #   fake       protocol cases against an in-process fake server (no network)
+#   tolerance  the shared protocol tolerance fixtures (test/bike/protocol/tolerance,
+#              vendored from Flywheel's shared/protocol/fixtures/tolerance) through the same fake server
 #   blackhole  10.255.255.1: the poll loop must keep ticking, no call blocks
 #   refused    nothing listening: backoff 0.5, 1, 2, 4, 5 s
 #   live       real `flywheel-bridge run --source sim`: watts follow the
@@ -68,12 +70,15 @@ if ! "$CC" -std=gnu99 -Wall -Wextra -O1 -DWITH_NETWORK -DTARGET_UNIX \
 	exit 1
 fi
 
-[ $# -eq 0 ] && set -- fake blackhole refused live
+[ $# -eq 0 ] && set -- fake tolerance blackhole refused live
 rc=0
 for t in "$@"; do
 	case "$t" in
 	fake)
 		"$WORK/bike_ws_test" fake || rc=1
+		;;
+	tolerance)
+		"$WORK/bike_ws_test" tolerance "$ROOT/test/bike/protocol/tolerance" || rc=1
 		;;
 	blackhole)
 		"$WORK/bike_ws_test" blackhole "$BLACKHOLE_HOST" 8787 || rc=1
