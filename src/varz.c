@@ -37,6 +37,7 @@
 #include "vga256d.h"
 #include "video.h"
 
+#include <math.h>
 #include <string.h>
 
 JE_integer tempDat, tempDat2, tempDat3;

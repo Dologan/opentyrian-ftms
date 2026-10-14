@@ -49,6 +49,7 @@
 #include "video.h"
 
 #include <assert.h>
+#include <math.h>
 
 // The tables in game_schema.c size their per-menu arrays independently.
 typedef char menu_tables_match_menu_max[(GAME_MENU_COUNT == MENU_MAX + 0) ? 1 : -1];
