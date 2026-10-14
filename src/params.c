@@ -25,6 +25,7 @@
 #include "file.h"
 #include "game_schema.h"
 #include "gamepad_selftest.h"
+#include "input_probe.h"
 #include "interp.h"
 #include "joystick.h"
 #include "logging.h"
@@ -140,6 +141,7 @@ const Options *JE_paramOptions(void)
 		{ 298, 0,   "regress-seed",      true },
 		{ 299, 0,   "regress-menu",      true },
 		{ 310, 0,   "log-file",          true },
+		{ 454, 0,   "input-probe",       false },
 		{ 301, 0,   "regress-smooth-effects-check", false },
 		{ 311, 0,   "regress-front-weapon", true },
 		{ 312, 0,   "regress-front-power",  true },
@@ -301,6 +303,7 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --starfield-speed=PERCENT    Background starfield speed as a percentage of the");
 			logInfo("                               original rate (10-100, default 25); sub-pixel motion");
 			logInfo("  --log-file=FILE              Mirror the log into FILE as well as stderr");
+			logInfo("  --input-probe                Log raw input events (remote, touch, mouse) to input-probe.log");
 			logInfo("                               (default on Steam Deck: the user config directory)");
 			logInfo("  --smooth-motion=on|off       Modern gameplay at the display refresh with interpolated");
 			logInfo("                               motion (default on)");
@@ -879,6 +882,10 @@ void JE_paramCheck(int argc, char *argv[])
 				logError("%s: --regress-menu must be ingame, pause or help", argv[0]);
 				exit(EXIT_FAILURE);
 			}
+			break;
+
+		case 454: // --input-probe (T3b.0)
+			input_probe_requested = true;
 			break;
 
 		case 310: // --log-file
