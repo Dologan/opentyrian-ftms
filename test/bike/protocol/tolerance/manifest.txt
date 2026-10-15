@@ -19,3 +19,4 @@ status-extra-device-key.json       status state=streaming streaming=true device=
 status-malformed-device.json       status state=streaming streaming=true device=absent
 unknown-type.json                  ignored
 welcome.json                       ignored
+control-state.json                 ignored
