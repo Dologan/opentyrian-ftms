@@ -25,3 +25,12 @@ To get an `opentyrian.exe` zip on demand: Actions, then **Windows**, then
 **Run workflow** on the branch you want, and download `opentyrian-windows-x86_64`
 from that run. The failure-only regression output is kept for one day.
 Otherwise build locally with MSYS2 (see the main README).
+
+## Releases
+
+Publishing a GitHub Release (not just pushing a tag) runs the Linux, macOS and
+Windows workflows. Each builds its package and attaches it to the release as
+`opentyrian-<tag>-<platform>` (Windows `.zip`, Linux `.tar.gz` for x86_64 and
+arm64, macOS `.zip`). The workflow files and the `.github/ci` helpers are taken
+from the tagged commit, so tag a commit on this branch (or on a branch that
+contains them).
