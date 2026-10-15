@@ -62,14 +62,15 @@ typedef struct { bool master, generator, hud;
   bool autofire; uint8_t autofire_reserve_pct;            /* 0|25|50 */
   int  autofire_key, autofire_key2;                       /* SDL_Scancode values */
   bool air_mouse, touch, remote_buttons; /* air_mouse = pointer steering in play; remote_buttons = menu OK/Back as Enter/Esc */ uint16_t pointer_sens_pct; /* 25..400 */
-  uint16_t ftp_w;                                         /* 50..500 step 5, default 200 */
+  uint16_t ftp_w;                                         /* 50..500 step 5, default 200: the typed value */
+  bool ftp_auto;                                          /* ftp_source: use the bridge's rider FTP (default) */
   uint8_t floor;                                          /* units/frame, default 8 */
   uint16_t bias_pct, gain_pct, cap_pct;                   /* 50, 100 ("Strength"), 150 */
   char bridge_host[64]; uint16_t bridge_port;             /* 127.0.0.1, 8787 */
 } BikeSettings;
 typedef struct { uint32_t seq; bool power_valid, cadence_valid; bq16 power_w, cadence_rpm;
   uint64_t arrival_us; } BikeSample;
-typedef struct { BikeLink link; bool has_sample; BikeSample latest; } BikeMailbox;
+typedef struct { BikeLink link; bool has_sample; BikeSample latest; BikeRider rider; /* §3a */ } BikeMailbox;
 typedef struct { BikeLink link; bool gate, generator_on, lost; bq16 watts, cadence, effort_norm,
   surge_meter; bool surging, autofire_on, autofire_held; } BikeHud;
 extern BikeSettings bike_settings;              /* edited by menus; read every frame, never cached */
@@ -125,8 +126,8 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `bool bike_ws_open(const char *host, uint16_t port)`
   - `void bike_ws_poll(BikeMailbox *mb, uint64_t now_us)`
   - `void bike_ws_close(void)`
-- After the upgrade it sends `{"type":"hello","client":"game","v":1}`.
-- It parses `telemetry` messages (`v == 1` only; `null` sets the field's `*_valid = false`) and `status.state`.
+- After the upgrade it sends `{"type":"hello","client":"game","v":1,"caps":["rider"]}` (the opt-in rider message, §3a).
+- It parses `telemetry` messages (`v == 1` only; `null` sets the field's `*_valid = false`), `status.state` and `rider` messages (handled before the `v` check; they do not count as proof of the protocol for the reconnect backoff).
 - Reconnect backoff is 0.5, 1, 2, 4 then 5 s.
 - `arrival_us` comes from `SDL_GetTicksNS()/1000`.
 
@@ -143,7 +144,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `ftp`, `ftp_source` (`auto` | `manual`, see §3a), `floor`, `bias`, `strength` (gain), `cap`
   - `superbomb_cooldown` (seconds, 0-600, default 60; 0 lifts the rate limit; not in the menu)
   - `bridge_host`, `bridge_port`
-- **CLI ids 440–459** (add to the AGENTS table). No name may be a prefix of another. `check_bike.sh` scans `params.c` for prefix pairs.
+- **CLI ids 440–459** (add to the AGENTS table). No name may be a prefix of another (getopt accepts prefixes). Nothing in `check_bike.sh` enforces this: check by hand when adding an option.
 
   | id | option | id | option |
   |---|---|---|---|
@@ -155,10 +156,9 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
 
 - **Regress pin**: next to `regress.c:1356`, call `bike_settings_default()` and force `master = 0`. Then apply `--regress-bike-set`. `--regress-bike-feed` implies `master = 1, generator = 1`. Set `bike_settings_pinned`, which makes `bike_config_save()` leave `[ftms]` untouched.
 - **Menus**: `SETUP_MENU_BIKE = 4` (`opentyr.h:68`, `opentyr.c:283`).
-  - The Setup menu gets a "Bike..." row.
-  - The Bike menu holds master, Bike power, FTP stepper, Strength, Floor, HUD, Bridge, a read-only Status row, "Surge..." and "Controls...", plus Done. That is 11 rows, within the `items[12]` limit.
-  - Surge and Controls are child menus.
-  - Mid-game: add a C-string "Bike..." row to `JE_inGameSetup` (`mainint.c:1514`). It is hidden when `isNetworkGame` and calls `setupMenu()` with `setup_menu_start = SETUP_MENU_BIKE`.
+  - The Setup menu gets a "Bike and Controls..." row.
+  - **(dev)** The shipped Bike menu (`src/bike_menu.c`) is one flat list of 19 rows (18 settings + Done): master, Bike Power, Bridge, FTP, FTP Source, Strength, Floor, the four Surge toggles, Auto-fire, Auto-fire Reserve, Air Mouse, Remote Buttons, Pointer Speed, Touch Controls and Bike HUD. It shows 9 rows at a time and scrolls; the live status line and the help line stay pinned below. There are no child menus.
+  - Mid-game: add a C-string "Bike and Controls" row to `JE_inGameSetup` (`mainint.c:1514`). It is hidden when `isNetworkGame` and calls `setupMenu()` with `setup_menu_start = SETUP_MENU_BIKE`.
   - Changes take effect on the next `bike_frame_tick()`, because nothing is cached.
 
 ### 3a. FTP from the bridge
@@ -171,7 +171,7 @@ The bridge keeps riders and calibrates their FTP, so the game asks for it instea
 - **Precedence** (`bike_ftp_w()`): `--ftms-ftp` beats the bridge value (when `ftp_source = auto`, the default), which beats the typed value (`ftp`, edited in the menu). `ftp_source = manual` ignores the bridge.
 - **Timing**: the bridge value is copied at level start and whenever no level is running (`bike_service`), never mid-level, because the effort config is rebuilt the moment the FTP changes and effort would jump. Manual edits still apply at once.
 - The bridge value is never written to `[ftms]`: `ftp` keeps the typed value. The Bike menu shows `230 W Ann` while it is in force (the stepper is then read-only; set FTP Source to Manual to type one), and says when a new bridge value waits for the next level.
-- Regress: scripted feeds never use the bridge, `bike_regress_pin` forces `manual`, and `check_bike.sh` (`bike-ftp-source`) proves a bridge FTP is byte-identical to typing the same number, that Manual and `--ftms-ftp` win, and that a rider announced mid-level changes nothing (`--regress-bike-rider`, the `rider` event).
+- Regress: scripted feeds never use the bridge, `bike_regress_pin` sets `ftp_auto = false` (Manual), and `check_bike.sh` (`bike-ftp-source`) proves a bridge FTP is byte-identical to typing the same number, that Manual and `--ftms-ftp` win, and that a rider announced mid-level changes nothing (`--regress-bike-rider`, the `rider` event). `snap-menu-rider` snapshots the Bike menu with a rider (`230 W Ann`). Digests in `test/bike/regress.txt` are rewritten with `tools/check_bike.sh BIN DATA OUT --update` (not `tools/regress.sh --update`); review the `git diff` of that file.
 
 ## 4. Frame hooks, gate and determinism
 
@@ -217,7 +217,7 @@ dt_us = getFramePeriodTicks10() * max(frameCountMax,1) * 1000 / 1024
 - Sample age is `bike_clock_us - arrival_us`.
 - After the last row the feed goes silent, which reads as stopped after 3 s.
 - `const:W[,RPM]` emits a row every 32 ticks (0.92 s, like the Q200B).
-- The `--regress-bike-events` CSV is `tick,action[,a,b]`, for example `autofire_toggle`, `set,key=value`, and `mouse_rel,dx,dy` / `button` / `finger` added by T3b.
+- The `--regress-bike-events` CSV is `tick,action[,a,b]`, for example `autofire_toggle`, `set,key=value`, and `mouse_rel,dx,dy` / `button` / `finger` added by T3b, and `rider,FTP[:NAME]` (see §3a; example `test/bike/events/rider_mid.csv`).
 
 **State hash** (`regress.c:744`):
 - Only when `bike_hash_active()` (regress with a feed, or with master pinned on), fold `power`, `lastPower` and `bike_state_digest()`.
@@ -236,7 +236,7 @@ dt_us = getFramePeriodTicks10() * max(frameCountMax,1) * 1000 / 1024
   - `updateSurge` with baseline warm-up (`tau = min(75, 5 + movingTime)`, and `dt/4` while surging), `surgeIntensity`, the surge meter and overdrive.
 - **Skip**: zones, streak, compliance, the power model and level inference.
 - **Do not port `RideFlow`**: Tyrian has no world-speed or pause. Only the 1.5 s sensor-lost constant is reused, in the blend.
-- **Golden data** (moved to Flywheel): Flywheel owns the feeds and the goldens, in `shared/conformance/effort/` (generated by its `gen_golden.mjs` from the real TypeScript engine, guarded by a test and a CI diff, stamped with `EFFORT_ENGINE_VERSION`). This repo keeps pinned copies in `test/bike/feeds`, `test/bike/golden`, plus the protocol tolerance fixtures in `test/bike/protocol/tolerance` and `tools/bike/trace_to_feed.py`.
+- **Golden data** (moved to Flywheel): Flywheel owns the feeds and the goldens, in `shared/conformance/effort/` (generated by its `gen_golden.mjs` from the real TypeScript engine, guarded by a test and a CI diff, stamped with `EFFORT_ENGINE_VERSION`). This repo keeps pinned copies in `test/bike/feeds`, `test/bike/golden`, plus the protocol fixtures in `test/bike/protocol/tolerance` and `test/bike/protocol/rider`, and `tools/bike/trace_to_feed.py` (53 files in all).
   - `test/bike/VENDORED_FROM` records the Flywheel commit, the engine version and a hash of every vendored file; `tools/bike/vendor.py verify` (run by `tools/check_bike_effort.sh`, so by `make regress`) fails on an edited, missing or extra file. To change the data, change Flywheel and run `python3 -I tools/bike/vendor.py sync <flywheel checkout>`. `test/bike/golden/c_digests.txt` is this repo's own and is never overwritten.
   - Semantics (the same in Flywheel's `conformance.ts`): `dt = 0.02875` s per tick, a new sample object per `connected=1` row, `age = clock - arrival`, `linkUp` from the row, columns `tick,effort_w,effort_norm,moving,stale,surging,surge_meter,events,baseline_w,surge`.
   - Feeds: const 150, ramp, dropout (2 s and 5 s), stop/coast, surge after 30 s of warm-up, FTP 50/500 edges, and Q200B runs 1 and 2 (made from the recorded rides with `trace_to_feed.py`).

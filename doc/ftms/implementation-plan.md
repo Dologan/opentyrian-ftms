@@ -154,6 +154,7 @@ Each agent works in its own git worktree under the scratchpad, on a task branch.
 - Regress pins all of this off regardless of the file, as `regress.c:1356` does for Depth.
 
 **T2.5 In-game Bike menu** (Sonnet; Opus reviews the UX)
+- *Superseded:* the row list below is the original plan. The shipped menu is a flat, scrolling list of 19 rows (18 settings + Done), including FTP Source; see `design.md` §3 and `src/bike_menu.c`.
 - Add a new `SETUP_MENU_BIKE` submenu, using the e994e9a Depth row as the template (`src/opentyr.c` menu tables). The Graphics menu is full.
 - Rows:
   - Bike: On/Off
@@ -304,7 +305,7 @@ The controls work (Phase 3b) needs T2.4 (settings) and T2.5 (menu framework) fir
 
 Every task in this plan is done, merged and pushed.
 - CI is green on Linux, macOS and Windows at `5c8249c`.
-- Locally, the full regress suite passes 207/207, `tools/check_bike.sh` passes (57 digests), and `tools/check_bike_bridge.sh` passes against the Flywheel replay bridge.
+- Locally, the full regress suite passes 207/207, `tools/check_bike.sh` passes (73 digests: 64 cases + 9 snapshots, after the FTP-source work), and `tools/check_bike_bridge.sh` passes against the Flywheel replay bridge.
 
 What needs the Surface + Q200B:
 - **Input probe:** run `--input-probe` and record the results in `doc/ftms/controls-probe.md`.

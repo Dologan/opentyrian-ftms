@@ -141,7 +141,7 @@ helper starts the bridge, waits for it, launches the game with
 `--ftms-bridge=127.0.0.1:8787`, and stops the bridge when the game exits.
 Anything after `--` goes to the game.
 
-Turn the bike on in **Setup → Bike...**, which is also in the in-game menu.
+Turn the bike on in **Setup → Bike and Controls...**, which is also in the in-game menu (as "Bike and Controls").
 The bridge options are `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W` and
 `--ftms-off`, if you prefer to start the bridge yourself.
 
