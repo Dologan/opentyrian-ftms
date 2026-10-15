@@ -107,7 +107,7 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
 
 Status: none of this has run on real bike hardware. The Q200B's power is probably estimated rather than measured, so an FTP is only meaningful on the bike it was measured on.
 
-- **Vendored data is owned by the Flywheel repo (MIT).** `tools/bike/vendor.py sync FLYWHEEL_DIR` copies it and rewrites `test/bike/VENDORED_FROM`; `vendor.py verify` checks it (line endings normalised before the sha256, so CRLF checkouts pass). Run both as `python3 -I tools/bike/vendor.py ...`. Never hand-edit these 53 files; change Flywheel, then re-sync:
+- **Vendored data is owned by the Flywheel repo (MIT).** `tools/bike/vendor.py sync FLYWHEEL_DIR` copies it and rewrites `test/bike/VENDORED_FROM`; `vendor.py verify` checks it (line endings normalised before the sha256, so CRLF checkouts pass). Run both as `python3 -I tools/bike/vendor.py ...`. Never hand-edit these 54 files; change Flywheel, then re-sync:
   - `test/bike/feeds/`, `test/bike/golden/` (except `c_digests.txt`), `test/bike/protocol/tolerance/`, `test/bike/protocol/rider/`, `tools/bike/trace_to_feed.py`.
   - **Fork-owned**: `test/bike/golden/c_digests.txt`, `test/bike/events/`, `test/bike/regress.txt`, `VENDORED_FROM`, `vendor.py`, `src/bike*.c`, `test/unit/bike_*_test.c`, `tools/check_bike*.sh`.
 - **Rider capability** (`src/bike_ws.c`): the hello is `{"type":"hello","client":"game","v":1,"caps":["rider"]}`; a bridge without capabilities never sends a rider. Parsing rules, shared with Flywheel's `test/bike/protocol/rider/manifest.txt`:
