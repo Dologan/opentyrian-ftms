@@ -25,7 +25,8 @@ real bike, and how the controls behave on the Surface. Plan for 45 to 60 minutes
 6. Set your FTP. Best: run `flywheel-bridge calibrate` in the Flywheel checkout (a warm-up, the hardest
    even 8 minutes you can hold, a cool-down; FTP is 90 percent of that average, in this bike's own
    watts). Setup > Bike and Controls then shows it beside FTP (FTP Source: Bridge) from the next level.
-   Otherwise type one under FTP Source: Manual (start with 200 W).
+   Otherwise type one under FTP Source: Manual (start with 200 W). `--ftms-ftp=W` on the command line
+   beats both the bridge's FTP and the typed one, so leave it off when you want the bridge value.
 7. Play Tyrian level 1 (or any level you know well). Use a weapon you like, and note the
    generator you start with.
 

@@ -33,7 +33,7 @@ make regress-quick           # critical 2.1 subset + cheap guards + optional ins
 make regress-2000 TYRIAN2000_DATA=<dir>   # full 2000: 183 cases, parallel; data required
 REGRESS_ONLY='^depth-' make regress-quick  # regex over case labels (both suites)
 TYRIAN2000_DATA=<dir> tools/regress-2000.sh -j 6 --case='^depth-' # --case overrides REGRESS_ONLY; both suites support -j / REGRESS_JOBS
-tools/regress.sh --update                 # regenerate 2.1 baselines (intentional output changes only)
+tools/regress.sh --update                 # regenerate 2.1 baselines (intentional output changes only; NOT the bike digests, see the Flywheel section)
 tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --only-launcher for launcher hashes
 ```
 
@@ -70,7 +70,7 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
 
 - **Guards run by `make regress`:**
   - `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_bike_effort.sh`, `check_bike.sh` (`make regress-bike`; bike core, digests in `test/bike/regress.txt`);
-  - **Vendored Flywheel files** (`test/bike/feeds`, `test/bike/golden` except `c_digests.txt`, `test/bike/protocol/tolerance`, `tools/bike/trace_to_feed.py`) are Flywheel's: never edit them here. `check_bike_effort.sh` verifies them against `test/bike/VENDORED_FROM`; change Flywheel, then `python3 -I tools/bike/vendor.py sync <flywheel checkout>`. `check_bike_ws.sh` (local only) also runs the tolerance fixtures through the bridge client.
+  - **Vendored Flywheel files are Flywheel's: never edit them here.** `check_bike_effort.sh` runs `vendor.py verify` first. `check_bike_ws.sh` is local only (not in `make regress`); see the Flywheel section below.
   - `check_installer.sh` (synthetic zips plus `tools/curl_stub.c` named by absolute path in a test spec; it can never reach the network);
   - `check_final_regression.sh` (the §7 matrix: data-open audit, save namespaces, UI save/load, bosses, pause, gamepad, launcher handoff);
   - `check_display.sh` (runtime display changes, modal centring, launcher first frame).
@@ -102,6 +102,29 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
    - Modals over the widened pic-1 layout use `modern_dialog_begin/end`.
    - **CRT filter** (`crt_filter.c`, `ntsc.c`): Modern-only, after canvas capture and all passes in `modern_present_frame`; read-only canvas, original Fit rect/mouse map. Output width follows NTSC, scanline height is `2*src` only for `dst % (2*src) == 0`, otherwise native Fit height (or `src` below `2*src`); buffer/texture resize only on dimension changes, ~16 MiB NTSC table built lazily and freed at shutdown. See `docs/CRT.md`.
    - Window changes must settle with `SDL_SyncWindow` before geometry is read, because Cocoa is asynchronous.
+
+## Flywheel integration: what changed and where things live
+
+Status: none of this has run on real bike hardware. The Q200B's power is probably estimated rather than measured, so an FTP is only meaningful on the bike it was measured on.
+
+- **Vendored data is owned by the Flywheel repo (MIT).** `tools/bike/vendor.py sync FLYWHEEL_DIR` copies it and rewrites `test/bike/VENDORED_FROM`; `vendor.py verify` checks it (line endings normalised before the sha256, so CRLF checkouts pass). Run both as `python3 -I tools/bike/vendor.py ...`. Never hand-edit these 53 files; change Flywheel, then re-sync:
+  - `test/bike/feeds/`, `test/bike/golden/` (except `c_digests.txt`), `test/bike/protocol/tolerance/`, `test/bike/protocol/rider/`, `tools/bike/trace_to_feed.py`.
+  - **Fork-owned**: `test/bike/golden/c_digests.txt`, `test/bike/events/`, `test/bike/regress.txt`, `VENDORED_FROM`, `vendor.py`, `src/bike*.c`, `test/unit/bike_*_test.c`, `tools/check_bike*.sh`.
+- **Rider capability** (`src/bike_ws.c`): the hello is `{"type":"hello","client":"game","v":1,"caps":["rider"]}`; a bridge without capabilities never sends a rider. Parsing rules, shared with Flywheel's `test/bike/protocol/rider/manifest.txt`:
+  - JSON string escapes are decoded; names and ids are ASCII only (anything above becomes `?`; control characters become spaces).
+  - FTP is rounded half up to whole watts and clamped to 50..500.
+  - A rider without a usable FTP keeps the FTP in use, unless it names a different id, which drops it.
+  - Rider messages are handled before the `v` check and do not count as protocol proof, so they do not reset the reconnect backoff.
+- **FTP precedence** (`bike_ftp_w()` in `src/bike.c`): `--ftms-ftp` > bridge FTP (`ftp_source=auto`, the default) > typed `ftp` (`ftp_source=manual`).
+  - The bridge value is copied at level start and between levels, never mid-level (the effort config is rebuilt when FTP changes, so effort would jump); a mid-level change shows as pending.
+  - It is never written to `[ftms]`. `bike_regress_pin` forces `ftp_auto=false`.
+- **Regress hooks**: option id 456 `--regress-bike-rider=FTP[:NAME]` and the `rider` action in `--regress-bike-events` CSVs (`test/bike/events/rider_mid.csv`: `300,rider,300:Ann`). The events help text in `params.c` still lists only `autofire_*|set`, not `rider`.
+- **Bike menu** (`src/bike_menu.c`): 19 rows (18 settings + Done), 9 visible, scrolling, with the status and help lines pinned. New row **FTP Source** (Bridge/Manual). While the bridge FTP is in force the FTP row shows e.g. `230 W Ann` and is read-only; the help line says so, or that a new bridge FTP applies next level. The Setup entry is "Bike and Controls...".
+- **Tests**:
+  - `check_bike.sh`: `bike-ftp-source` (bridge FTP == the same number typed; Manual and `--ftms-ftp` win; a mid-level rider changes nothing) and `snap-menu-rider`. Four existing snapshot digests changed (`snap-menu`, `-nav`, `-edit`, `snap-ingame-bike`); the HUD snaps and all case digests are unchanged.
+  - `check_bike_ws.sh [fake|tolerance|rider|blackhole|refused|live]` (default: all; its header usage line still omits tolerance and rider). Needs cc, SDL3 and SDL3_net (pkg-config), python3; `live` also needs `uv` and `FLYWHEEL_DIR` (default `/home/user/flywheel`). **`live` prints SKIP and still exits 0 when `$FLYWHEEL_DIR/bridge` is missing, which looks like a pass.**
+  - `check_bike_effort.sh` runs `vendor.py verify` before building the unit test.
+- **Updating bike digests**: `tools/check_bike.sh BIN DATA OUT --update` (`tools/regress.sh --update` does not touch them). It rewrites `test/bike/regress.txt` (73 lines: 64 cases + 9 snaps) and, if PIL is installed, `doc/ftms/screens/*.png`. Review `git diff test/bike/regress.txt`: only the labels you meant to change may differ. `make regress` needs `data/` (`./get_data.sh`) for its final matrix.
 
 ## Data, saves, installer
 
