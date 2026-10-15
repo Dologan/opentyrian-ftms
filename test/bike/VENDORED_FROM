@@ -2,9 +2,9 @@
 # then re-sync with `python3 -I tools/bike/vendor.py sync <flywheel checkout>`.
 # tools/check_bike_effort.sh verifies this record (`vendor.py verify`).
 source https://github.com/Dologan/flywheel
-commit 481a864a1ef55de4ea0efd1f80e3dda8dacd0c20
+commit 1c46b901c2a7ffaffa0c09a19d4014912d9d0293
 effort-engine-version 1
-tree-sha256 edabe5e9d0452d6026e76768efda8e319b4da9142f532f68b95e59423863d7e0
+tree-sha256 8e590b20cd33f63627c6ccef20dd0bf8552db1ddc4018733c8e30da51f18b083
 file test/bike/feeds/const150.csv 5e169afb2fa94acff4f098e7d4c4101c89955d1d242a26b742facf52f783fda6
 file test/bike/feeds/dropout.csv 346a0fdc119adba4812a25aca18e4666fcf8be270000345c34c40c2e341b3a9b
 file test/bike/feeds/nopower.csv ce06132de7a759ddc3f81a1c49160ace0d4b51effd35a01f906c697eedb910cb
@@ -43,7 +43,8 @@ file test/bike/protocol/rider/rider-minimal.json 79887a939598f7dccc66aee43406bfd
 file test/bike/protocol/rider/rider-no-ftp.json 16bf3d17fe03b60b89d7d8286254137b2b0fbc99875192e14ed617e0fd606053
 file test/bike/protocol/rider/rider-string-ftp.json 52dd92192215f303b9c824cc95c709a115a6211f94d0e541334070f17b5acff2
 file test/bike/protocol/rider/rider-zero-ftp.json 5a9810118caba555eab4312478fca81c8a69b91b1dd10ae4cdfeb05cd90f996d
-file test/bike/protocol/tolerance/manifest.txt 4eb0deddd6b4aefeb0c1bf1bd12f3ea5c29e71d563a53ab01a7025edfaf87047
+file test/bike/protocol/tolerance/control-state.json 577bb668c649de0163a84bbfae6be6f1fd4707e8c6bf45e7d4498aec6206791a
+file test/bike/protocol/tolerance/manifest.txt 15a2dcddb66cbadafc37b5aa477acf2b8a3b8c7233142d2ae14dd0386d688c55
 file test/bike/protocol/tolerance/status-extra-device-key.json 8f1797b6ae60393795845c1aec9b01f98de3a9b333c882201394a5f47e937110
 file test/bike/protocol/tolerance/status-malformed-device.json 56623c99ba14702633d121f7b02fe55a89666d3d05b5968a643b2b988e49c047
 file test/bike/protocol/tolerance/status-new-state.json 8c482c5e87e584b09cf22f821c7336cb3cfce0a79aa0f44d0d9c2e7203782e55
