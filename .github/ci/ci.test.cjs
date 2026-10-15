@@ -83,8 +83,12 @@ test('release requires complete unexpired artifacts and searches older runs', as
   const older = await decision({ event: 'release', runs: [success, { ...success, id: 12 }],
     artifacts: id => id === 11 ? [] : [{ name: 'package', expired: false }] });
   assert.equal(older.outputs['run-id'], '12');
+  // Pushes no longer upload packages: a release then builds its own.
   for (const artifacts of [[], [{ name: 'package', expired: true }]]) {
-    assert.equal((await decision({ event: 'release', runs: [success], artifacts })).failures.length, 1);
+    const fresh = await decision({ event: 'release', runs: [success], artifacts });
+    assert.equal(fresh.failures.length, 0);
+    assert.equal(fresh.outputs.build, 'true');
+    assert.equal(fresh.outputs['run-id'], '');
   }
 });
 test('attachment changes the name only and retries existing assets', async () => {

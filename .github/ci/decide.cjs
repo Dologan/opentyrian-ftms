@@ -63,10 +63,11 @@ module.exports = async ({ github, context, core, workflow, packages }) => {
         return;
       }
     }
-    if (successful.length) {
-      // Do not silently produce different bytes when the original packages expired.
-      core.setFailed('Successful push runs exist, but no complete unexpired package set remains. Rerun the original push workflow to regenerate artifacts, then retry the release.');
-    } else core.info(`Release fallback: no successful push run for ${sha}; build packages normally.`);
+    // Push and pull_request runs no longer upload packages (they used up the
+    // Actions storage quota), so a release builds its own packages here.
+    core.info(successful.length
+      ? `Release: successful push runs for ${sha} have no unexpired packages; build packages normally.`
+      : `Release fallback: no successful push run for ${sha}; build packages normally.`);
   } catch (error) {
     if (context.eventName === 'release') {
       // Release fallback is allowed only after proving no successful run exists.

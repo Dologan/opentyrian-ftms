@@ -16,3 +16,12 @@ navigation pass. Start with the implementation plan for the status of each step.
 The launch helper for playing with a bike is in [`../../tools/ftms/`](../../tools/ftms/),
 and the player-facing instructions are in the main
 [README](../../README.md#playing-with-an-exercise-bike).
+
+## Getting a Windows build without filling the Actions storage
+
+Pushes and pull requests no longer upload a package artifact. Packages are built
+and uploaded only for release events and manual runs, and are kept for 3 days.
+To get an `opentyrian.exe` zip on demand: Actions, then **Windows**, then
+**Run workflow** on the branch you want, and download `opentyrian-windows-x86_64`
+from that run. The failure-only regression output is kept for one day.
+Otherwise build locally with MSYS2 (see the main README).
