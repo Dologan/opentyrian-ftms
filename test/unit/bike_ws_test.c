@@ -273,7 +273,7 @@ static void run_fake(void)
 	CHECK(bike_ws_open("127.0.0.1", lport), "reopen");
 	CHECK(pump_until(c_open, 3000), "handshake completes (state=%s)", bike_ws_state_name(bike_ws_state()));
 	op = srv_read_frame(pl, sizeof pl, &plen);
-	CHECK(op == 1 && strcmp(pl, "{\"type\":\"hello\",\"client\":\"game\",\"v\":1,\"caps\":[\"rider\"]}") == 0, "hello frame, got op=%d '%s'", op, pl);
+	CHECK(op == 1 && strcmp(pl, "{\"type\":\"hello\",\"client\":\"game\",\"v\":1,\"caps\":[\"rider\",\"intensity\"]}") == 0, "hello frame, got op=%d '%s'", op, pl);
 	CHECK(mb.link == BIKE_LINK_WAITING, "open without status or telemetry is WAITING (%d)", mb.link);
 
 	/* status handling */
@@ -829,7 +829,8 @@ static void run_rider(const char *dir)
 	CHECK(bike_ws_open("127.0.0.1", lport), "open");
 	CHECK(pump_until(c_open, 3000), "handshake completes");
 	op = srv_read_frame(pl, sizeof pl, &plen);
-	CHECK(op == 1 && strstr(pl, "\"caps\":[\"rider\"]") != NULL, "hello asks for the rider capability, got '%s'", pl);
+	CHECK(op == 1 && strstr(pl, "\"caps\":[\"rider\",\"intensity\"]") != NULL,
+	      "hello asks for the rider and intensity capabilities, got '%s'", pl);
 
 	/* An older bridge never sends a rider: the client plays on with its own FTP. */
 	send_and_settle("{\"type\":\"status\",\"state\":\"streaming\"}");
@@ -852,6 +853,18 @@ static void run_rider(const char *dir)
 				CHECK(strcmp(mb.rider.name, val) == 0, "%s: name '%s', got '%s'", rows[i].file, val, mb.rider.name);
 			if (tol_get(&rows[i], "ftpClamped", val, sizeof val))
 				CHECK(mb.rider.ftp_w == (uint16_t)atoi(val), "%s: FTP %s, got %u", rows[i].file, val, (unsigned)mb.rider.ftp_w);
+			/* intensity: 'none' (or absent) -> played at the measured FTP; else the block's own values */
+			if (tol_get(&rows[i], "playClamped", val, sizeof val))
+				CHECK(mb.rider.eff_ftp_w == (uint16_t)atoi(val), "%s: plays at %s W, got %u", rows[i].file, val, (unsigned)mb.rider.eff_ftp_w);
+			if (tol_get(&rows[i], "intensity", val, sizeof val) && strcmp(val, "none") != 0)
+			{
+				CHECK(mb.rider.has_intensity && strcmp(mb.rider.intensity_name, val) == 0, "%s: preset '%s', got '%s' (%d)", rows[i].file, val, mb.rider.intensity_name, mb.rider.has_intensity);
+				if (tol_get(&rows[i], "percent", val, sizeof val))
+					CHECK(mb.rider.intensity_pct == (unsigned)atoi(val), "%s: percent %s, got %u", rows[i].file, val, (unsigned)mb.rider.intensity_pct);
+			}
+			else
+				CHECK(!mb.rider.has_intensity && mb.rider.intensity_name[0] == '\0' && mb.rider.eff_ftp_w == mb.rider.ftp_w,
+				      "%s: no usable intensity block, played at the measured FTP", rows[i].file);
 			if (tol_get(&rows[i], "source", val, sizeof val))
 				CHECK(strcmp(mb.rider.source, val) == 0, "%s: source '%s', got '%s'", rows[i].file, val, mb.rider.source);
 			else

@@ -550,9 +550,11 @@ static bool bridge_ftp_in_force(void)
 	return bike_settings.ftp_auto && rider_frozen.valid && !override_present("ftp");
 }
 
+/* The effective FTP (the measured one without an intensity preset) is what feeds effort, and only
+ * ever at the frozen moments above.  Neither it nor the measured FTP is written to [ftms]. */
 unsigned bike_ftp_w(void)
 {
-	return bridge_ftp_in_force() ? rider_frozen.ftp_w : bike_settings.ftp_w;
+	return bridge_ftp_in_force() ? rider_frozen.eff_ftp_w : bike_settings.ftp_w;
 }
 
 void bike_ftp_info(BikeFtpInfo *out)
@@ -565,18 +567,41 @@ void bike_ftp_info(BikeFtpInfo *out)
 		snprintf(out->rider, sizeof out->rider, "%s", rider_frozen.name);
 		snprintf(out->source, sizeof out->source, "%s", rider_frozen.source);
 		snprintf(out->bike, sizeof out->bike, "%s", rider_frozen.bike);
+		out->measured_w = rider_frozen.ftp_w;
+		/* Normal (100 %, effective == measured) is shown like no preset at all */
+		if (rider_frozen.has_intensity && (rider_frozen.intensity_pct != 100 || rider_frozen.eff_ftp_w != rider_frozen.ftp_w))
+		{
+			out->intensity = true;
+			out->percent = rider_frozen.intensity_pct;
+			snprintf(out->preset, sizeof out->preset, "%s", rider_frozen.intensity_name);
+		}
 	}
 	out->pending = bike_settings.ftp_auto && !override_present("ftp") &&
-	               mailbox.rider.valid && (!rider_frozen.valid || mailbox.rider.ftp_w != rider_frozen.ftp_w);
+	               mailbox.rider.valid && (!rider_frozen.valid || mailbox.rider.eff_ftp_w != rider_frozen.eff_ftp_w);
 }
 
+/* "FTP[@PCT][:NAME]".  With @PCT the rider also carries an intensity block: its effective FTP follows
+ * Flywheel's integer rule (the FTP is already whole watts), and its name comes from the percent. */
 bool bike_regress_rider(const char *spec)
 {
 	char *end;
 	const unsigned long ftp = strtoul(spec, &end, 10);
 	const char *name = "Test";
+	unsigned long pct = 0, eff;
+	bool has_pct = false;
 
-	if (end == spec || (*end != '\0' && *end != ':'))
+	if (end == spec)
+		return false;
+	if (*end == '@')
+	{
+		const char *p = end + 1;
+
+		pct = strtoul(p, &end, 10);
+		if (end == p || pct < 50 || pct > 150)
+			return false;
+		has_pct = true;
+	}
+	if (*end != '\0' && *end != ':')
 		return false;
 	if (*end == ':')
 	{
@@ -587,6 +612,29 @@ bool bike_regress_rider(const char *spec)
 	memset(&mailbox.rider, 0, sizeof mailbox.rider);
 	mailbox.rider.valid = true;
 	mailbox.rider.ftp_w = (uint16_t)(ftp < BIKE_FTP_MIN ? BIKE_FTP_MIN : (ftp > BIKE_FTP_MAX ? BIKE_FTP_MAX : ftp));
+	mailbox.rider.eff_ftp_w = mailbox.rider.ftp_w;
+	if (has_pct)
+	{
+		/* the same rule as the bridge, on the unclamped whole watts: clamped to what the game accepts after */
+		eff = (ftp * pct + 50) / 100;
+		if (eff < 1)
+			eff = 1;
+		mailbox.rider.has_intensity = true;
+		mailbox.rider.intensity_pct = (uint8_t)pct;
+		mailbox.rider.eff_ftp_w = (uint16_t)(eff < BIKE_FTP_MIN ? BIKE_FTP_MIN : (eff > BIKE_FTP_MAX ? BIKE_FTP_MAX : eff));
+		if (pct == 100)
+			strcpy(mailbox.rider.intensity_name, "Normal");
+		else if (pct == 70)
+			strcpy(mailbox.rider.intensity_name, "Recovery");
+		else if (pct == 85)
+			strcpy(mailbox.rider.intensity_name, "Easy");
+		else if (pct == 110)
+			strcpy(mailbox.rider.intensity_name, "Hard");
+		else if (pct == 120)
+			strcpy(mailbox.rider.intensity_name, "Very hard");
+		else
+			strcpy(mailbox.rider.intensity_name, "Custom");
+	}
 	strcpy(mailbox.rider.id, "regress");
 	strcpy(mailbox.rider.name, name);
 	strcpy(mailbox.rider.source, "test");

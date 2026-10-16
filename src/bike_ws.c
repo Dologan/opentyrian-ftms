@@ -424,6 +424,13 @@ typedef struct
 	bool has_id;
 	char id[sizeof ((BikeRider *)0)->id], name[sizeof ((BikeRider *)0)->name];
 	char source[sizeof ((BikeRider *)0)->source], bike[sizeof ((BikeRider *)0)->bike];
+	/* the nested "intensity" block of a rider (docs/intensity.md in Flywheel), kept apart from the
+	 * top-level fields above; whether it is usable is decided once the whole message is read */
+	bool in_object;             /* "intensity" was an object */
+	FieldKind in_eff, in_pct;   /* effectiveFtpW, percent */
+	bq16 in_eff_q, in_pct_q;
+	bool in_has_name;           /* a non-empty string */
+	char in_name[sizeof ((BikeRider *)0)->intensity_name];
 } WsMessage;
 
 static void scan_field(const char *val, FieldKind *kind, bq16 *out)
@@ -491,6 +498,31 @@ static bool parse_message(const char *json, WsMessage *m)
 		{
 			(void)copy_json_string(val, m->source, sizeof m->source);
 		}
+		else if (key_is(key, klen, "intensity"))
+		{
+			/* its own member loop: a name, ftpW, type or id in here is never the top-level one.  A repeated
+			 * key starts again; anything but an object means no block. */
+			m->in_object = false;
+			m->in_eff = m->in_pct = FIELD_ABSENT;
+			m->in_has_name = false;
+			m->in_name[0] = '\0';
+			if (*val == '{')
+			{
+				const char *ip = val + 1, *ikey, *ival;
+				size_t iklen;
+
+				m->in_object = true;
+				while (next_member(&ip, &ikey, &iklen, &ival))
+				{
+					if (key_is(ikey, iklen, "effectiveFtpW"))
+						scan_field(ival, &m->in_eff, &m->in_eff_q);
+					else if (key_is(ikey, iklen, "percent"))
+						scan_field(ival, &m->in_pct, &m->in_pct_q);
+					else if (key_is(ikey, iklen, "name"))
+						m->in_has_name = copy_json_string(ival, m->in_name, sizeof m->in_name) && m->in_name[0] != '\0';
+				}
+			}
+		}
 		else if (key_is(key, klen, "ftpBike") && *val == '{')
 		{
 			const char *bp = val + 1, *bkey, *bval;
@@ -520,14 +552,29 @@ static bq16 clamp_nonneg(bq16 x)
 	return x < 0 ? 0 : x;
 }
 
+/* A whole number in lo..hi by value (196 and 196.0 alike), as a Q16.16 can tell. */
+static bool q16_whole_in(FieldKind kind, bq16 q, int lo, int hi, unsigned *out)
+{
+	if (kind != FIELD_NUMBER || q < 0 || (q & 0xFFFF) != 0 || (q >> 16) < lo || (q >> 16) > hi)
+		return false;
+	*out = (unsigned)(q >> 16);
+	return true;
+}
+
 /* The bridge's active rider.  A message with a usable FTP replaces the stored rider.  One without
  * (no FTP, not a number, zero) leaves the FTP already in use alone, unless it names a different
  * rider: then the old FTP is not theirs and is dropped.  The FTP is whole watts, rounded half up
- * and clamped to what the game accepts. */
+ * and clamped to what the game accepts.
+ *
+ * An intensity block is only looked at with a usable FTP, so it can never create one.  Usable means
+ * a whole effectiveFtpW in 1..10000, a whole percent in 50..150 and a non-empty name; then the game
+ * plays at effectiveFtpW (clamped like the FTP), whatever ftpW and percent say.  Any other message
+ * (the block missing, null, mistyped or incomplete) plays at the measured FTP again. */
 static void apply_rider(BikeMailbox *mb, const WsMessage *m)
 {
 	BikeRider *r = &mb->rider;
 	uint32_t watts = 0;
+	unsigned eff, pct;
 
 	if (m->ftp == FIELD_NUMBER && m->ftp_q > 0)
 		watts = ((uint32_t)m->ftp_q + 32768u) >> 16;
@@ -544,6 +591,15 @@ static void apply_rider(BikeMailbox *mb, const WsMessage *m)
 	memcpy(r->name, m->name, sizeof r->name);
 	memcpy(r->source, m->source, sizeof r->source);
 	memcpy(r->bike, m->bike, sizeof r->bike);
+	r->eff_ftp_w = r->ftp_w;
+	if (m->in_object && m->in_has_name && q16_whole_in(m->in_eff, m->in_eff_q, 1, 10000, &eff) &&
+	    q16_whole_in(m->in_pct, m->in_pct_q, 50, 150, &pct))
+	{
+		r->has_intensity = true;
+		r->intensity_pct = (uint8_t)pct;
+		r->eff_ftp_w = (uint16_t)(eff < BIKE_FTP_MIN ? BIKE_FTP_MIN : (eff > BIKE_FTP_MAX ? BIKE_FTP_MAX : eff));
+		memcpy(r->intensity_name, m->in_name, sizeof r->intensity_name);
+	}
 }
 
 static void handle_message(const char *json, BikeMailbox *mb, uint64_t now_us)
@@ -828,9 +884,11 @@ static bool process_handshake(uint64_t now_us)
 	failure_logged = false;
 	logInfo("bike bridge %s:%u: connected", host_name, (unsigned)host_port);
 	{
-		/* Asks for the opt-in "rider" message (the bridge's active rider and their FTP).  A bridge that
-		 * predates capabilities ignores the unknown key and simply never sends one. */
-		static const char hello[] = "{\"type\":\"hello\",\"client\":\"game\",\"v\":1,\"caps\":[\"rider\"]}";
+		/* Asks for the opt-in "rider" message (the bridge's active rider and their FTP) and, with it, the
+		 * "intensity" block (the FTP to play at under the rider's preset).  A bridge that predates
+		 * capabilities ignores the unknown key and simply never sends one; one that does not grant
+		 * "intensity" sends the plain rider, which is played at its measured FTP. */
+		static const char hello[] = "{\"type\":\"hello\",\"client\":\"game\",\"v\":1,\"caps\":[\"rider\",\"intensity\"]}";
 		if (!send_frame(0x1, (const uint8_t *)hello, (int)sizeof hello - 1))
 		{
 			fail_link("write failed", now_us);

@@ -322,7 +322,7 @@ static void apply_event(const InjectedEvent *e)
 		player[0].last_items = player[0].items;
 		JE_drawOptions();
 		break;
-	case EV_RIDER: /* regress only: the bridge announces a rider "FTP[:NAME]" */
+	case EV_RIDER: /* regress only: the bridge announces a rider "FTP[@PCT][:NAME]" */
 		if (!bike_regress_rider(e->arg))
 			logWarn("bike events: bad rider '%s'", e->arg);
 		break;

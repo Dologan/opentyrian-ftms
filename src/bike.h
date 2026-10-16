@@ -46,11 +46,18 @@ typedef struct
 #define BIKE_FTP_MIN 50
 #define BIKE_FTP_MAX 500
 
-/* The bridge's active rider (the opt-in "rider" message): written by the transport, read by bike.c. */
+/* The bridge's active rider (the opt-in "rider" message): written by the transport, read by bike.c.
+ * ftp_w is always the MEASURED FTP.  An intensity preset (docs/intensity.md in Flywheel) adds an
+ * effective FTP beside it: that is what effort is normalised by, and it is never stored as the
+ * rider's FTP anywhere (not in [ftms], not in a profile). */
 typedef struct
 {
 	bool valid;     /* an FTP has arrived */
-	uint16_t ftp_w; /* whole watts, clamped to BIKE_FTP_MIN..BIKE_FTP_MAX */
+	uint16_t ftp_w; /* the measured FTP: whole watts, clamped to BIKE_FTP_MIN..BIKE_FTP_MAX */
+	bool has_intensity;      /* the message carried a usable intensity block */
+	uint16_t eff_ftp_w;      /* the FTP to play at: the block's effectiveFtpW clamped to BIKE_FTP_MIN..MAX, else ftp_w */
+	uint8_t intensity_pct;   /* 50..150, only with has_intensity */
+	char intensity_name[32]; /* the preset's name, ASCII only, non-empty with has_intensity */
 	char id[48];
 	char name[32];   /* ASCII only: anything else became '?' */
 	char source[8];  /* "manual", "test", "ramp" or empty */
@@ -118,22 +125,29 @@ const BikeHud *bike_hud(void);
 
 /* The FTP in force (watts), what bike_effort normalises effort by.  The typed-in value
  * (bike_settings.ftp_w) unless ftp_auto is on, the bridge reported a rider's FTP, and no
- * --ftms-ftp was given on the command line.  A bridge value is only picked up between levels
- * (and at level start): changing FTP mid-level would make effort jump.  Manual edits apply at once. */
+ * --ftms-ftp was given on the command line.  With an intensity preset the bridge's value is the
+ * effective FTP (measured FTP x percent).  A bridge value is only picked up between levels
+ * (and at level start): changing FTP or preset mid-level would make effort jump.  Manual edits
+ * apply at once. */
 unsigned bike_ftp_w(void);
 
 typedef struct
 {
-	bool from_bridge; /* bike_ftp_w() is the bridge's rider FTP */
+	bool from_bridge; /* bike_ftp_w() is the bridge's rider FTP (or its effective FTP under a preset) */
 	bool pending;     /* the bridge now reports a different FTP; it applies from the next level */
 	unsigned watts;   /* bike_ftp_w() */
 	char rider[32];   /* the rider and how their FTP was set, when from_bridge */
 	char source[8];
 	char bike[32];
+	bool intensity;       /* from_bridge, and a preset other than Normal is in force (watts != measured) */
+	unsigned measured_w;  /* the rider's measured FTP, when from_bridge (== watts without a preset) */
+	unsigned percent;     /* the preset's percent, when intensity */
+	char preset[32];      /* the preset's name, when intensity */
 } BikeFtpInfo;
 void bike_ftp_info(BikeFtpInfo *out);
 
-/* --regress-bike-rider / "rider" events: pretend the bridge announced a rider. "FTP[:NAME]". */
+/* --regress-bike-rider / "rider" events: pretend the bridge announced a rider.  "FTP[@PCT][:NAME]":
+ * PCT (50..150) adds an intensity block whose effective FTP is (FTP*PCT+50)/100 (clamped to 50..500). */
 bool bike_regress_rider(const char *spec);
 
 /* Menus and HUD (presentation only, read-only). */
