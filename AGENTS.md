@@ -107,18 +107,19 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
 
 Status: none of this has run on real bike hardware. The Q200B's power is probably estimated rather than measured, so an FTP is only meaningful on the bike it was measured on.
 
-- **Vendored data is owned by the Flywheel repo (MIT).** `tools/bike/vendor.py sync FLYWHEEL_DIR` copies it and rewrites `test/bike/VENDORED_FROM`; `vendor.py verify` checks it (line endings normalised before the sha256, so CRLF checkouts pass). Run both as `python3 -I tools/bike/vendor.py ...`. Never hand-edit these 54 files; change Flywheel, then re-sync:
+- **Vendored data is owned by the Flywheel repo (MIT).** `tools/bike/vendor.py sync FLYWHEEL_DIR` copies it and rewrites `test/bike/VENDORED_FROM`; `vendor.py verify` checks it (line endings normalised before the sha256, so CRLF checkouts pass). Run both as `python3 -I tools/bike/vendor.py ...`. Never hand-edit these 79 files; change Flywheel, then re-sync:
   - `test/bike/feeds/`, `test/bike/golden/` (except `c_digests.txt`), `test/bike/protocol/tolerance/`, `test/bike/protocol/rider/`, `tools/bike/trace_to_feed.py`.
   - **Fork-owned**: `test/bike/golden/c_digests.txt`, `test/bike/events/`, `test/bike/regress.txt`, `VENDORED_FROM`, `vendor.py`, `src/bike*.c`, `test/unit/bike_*_test.c`, `tools/check_bike*.sh`.
-- **Rider capability** (`src/bike_ws.c`): the hello is `{"type":"hello","client":"game","v":1,"caps":["rider"]}`; a bridge without capabilities never sends a rider. Parsing rules, shared with Flywheel's `test/bike/protocol/rider/manifest.txt`:
+- **Rider capability** (`src/bike_ws.c`): the hello is `{"type":"hello","client":"game","v":1,"caps":["rider","intensity"]}`; a bridge without capabilities never sends a rider, one without `intensity` sends the plain rider (played at the measured FTP). Parsing rules, shared with Flywheel's `test/bike/protocol/rider/manifest.txt`:
   - JSON string escapes are decoded; names and ids are ASCII only (anything above becomes `?`; control characters become spaces).
   - FTP is rounded half up to whole watts and clamped to 50..500.
   - A rider without a usable FTP keeps the FTP in use, unless it names a different id, which drops it.
+  - **Intensity** (Flywheel `docs/intensity.md`): the nested `intensity` object is read in its own member loop. It is usable only with a whole `effectiveFtpW` 1..10000, a whole `percent` 50..150 and a non-empty `name`, and only when the message has a usable top-level FTP; then `BikeRider.eff_ftp_w` (clamped 50..500) is what plays and `ftp_w` stays the measured FTP. Anything else, or a later message without a usable block, plays at `ftp_w`. Never computed or cross-checked, never written to `[ftms]`.
   - Rider messages are handled before the `v` check and do not count as protocol proof, so they do not reset the reconnect backoff.
-- **FTP precedence** (`bike_ftp_w()` in `src/bike.c`): `--ftms-ftp` > bridge FTP (`ftp_source=auto`, the default) > typed `ftp` (`ftp_source=manual`).
+- **FTP precedence** (`bike_ftp_w()` in `src/bike.c`): `--ftms-ftp` > bridge FTP, i.e. the effective FTP under an intensity preset (`ftp_source=auto`, the default) > typed `ftp` (`ftp_source=manual`).
   - The bridge value is copied at level start and between levels, never mid-level (the effort config is rebuilt when FTP changes, so effort would jump); a mid-level change shows as pending.
   - It is never written to `[ftms]`. `bike_regress_pin` forces `ftp_auto=false`.
-- **Regress hooks**: option id 456 `--regress-bike-rider=FTP[:NAME]` and the `rider` action in `--regress-bike-events` CSVs (`test/bike/events/rider_mid.csv`: `300,rider,300:Ann`). The events help text in `params.c` still lists only `autofire_*|set`, not `rider`.
+- **Regress hooks**: option id 456 `--regress-bike-rider=FTP[@PCT][:NAME]` (PCT 50..150 synthesises an intensity block, effective = (FTP*PCT+50)/100) and the `rider` action in `--regress-bike-events` CSVs (`test/bike/events/rider_mid.csv`: `300,rider,300:Ann`; `rider_intensity_mid.csv`: `300,rider,300@85:Ann`).
 - **Bike menu** (`src/bike_menu.c`): 19 rows (18 settings + Done), 9 visible, scrolling, with the status and help lines pinned. New row **FTP Source** (Bridge/Manual). While the bridge FTP is in force the FTP row shows e.g. `230 W Ann` and is read-only; the help line says so, or that a new bridge FTP applies next level. The Setup entry is "Bike and Controls...".
 - **Tests**:
   - `check_bike.sh`: `bike-ftp-source` (bridge FTP == the same number typed; Manual and `--ftms-ftp` win; a mid-level rider changes nothing) and `snap-menu-rider`. Four existing snapshot digests changed (`snap-menu`, `-nav`, `-edit`, `snap-ingame-bike`); the HUD snaps and all case digests are unchanged.

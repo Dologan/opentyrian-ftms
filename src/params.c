@@ -349,9 +349,10 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-reverse-y          Regress only: force the reverse-controls smoothie on");
 			logInfo("  --regress-bike-feed=FILE|const:W[,RPM]  Regress only: scripted bike feed (tick,watts,cadence,connected)");
 			logInfo("  --regress-bike-log=FILE      Regress only: per-tick bike log");
-			logInfo("  --regress-bike-events=FILE   Regress only: injected bike events (tick,autofire_toggle|autofire_on|autofire_off|set,K=V)");
+			logInfo("  --regress-bike-events=FILE   Regress only: injected bike events (tick,autofire_toggle|autofire_on|autofire_off|set|rider,ARG)");
 			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
-			logInfo("  --regress-bike-rider=FTP[:NAME]  Regress only: pretend the bridge announced this rider");
+			logInfo("  --regress-bike-rider=FTP[@PCT][:NAME]  Regress only: pretend the bridge announced this rider;");
+			logInfo("                               @PCT (50-150) adds an intensity preset: effective FTP = (FTP*PCT+50)/100");
 			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
 			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
 			logInfo("  --ftms-log=FILE              Write a per-second bike calibration CSV (watts, refill, power, shots) while playing");
@@ -975,10 +976,10 @@ void JE_paramCheck(int argc, char *argv[])
 			regress_bike_set = option.arg;
 			break;
 
-		case 456: // --regress-bike-rider=FTP[:NAME]
+		case 456: // --regress-bike-rider=FTP[@PCT][:NAME]
 			if (!bike_regress_rider(option.arg))
 			{
-				logError("%s: --regress-bike-rider must be FTP or FTP:NAME", argv[0]);
+				logError("%s: --regress-bike-rider must be FTP, FTP:NAME, FTP@PCT or FTP@PCT:NAME (PCT 50-150)", argv[0]);
 				exit(EXIT_FAILURE);
 			}
 			break;
