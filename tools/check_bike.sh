@@ -166,6 +166,20 @@ same_run ftpcli ftpm250 "--ftms-ftp did not beat the bridge"
 same_run ftpmid ftpm200 "a rider announced mid-level changed the run"
 echo "PASS bike-ftp-source: bridge FTP == typed FTP; manual and --ftms-ftp win; a mid-level rider waits for the next level"
 
+# --- Flywheel intensity preset: the effective FTP (300 W at 85 % = 255 W) is what plays ----------
+# Same precedence as a plain bridge FTP: the typed FTP is never touched, Manual and --ftms-ftp win.
+case_run ftpm255 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=255,ftp_source=manual
+case_run ftpint 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=auto --regress-bike-rider=300@85:Ann
+case_run ftpintman 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=manual --regress-bike-rider=300@85:Ann
+case_run ftpintcli 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=250,ftp_source=auto --ftms-ftp=250 --regress-bike-rider=300@85:Ann
+case_run ftpintmid 3000 "$RAMP" --regress-bike-set=surge_superbomb=0,ftp=200,ftp_source=auto --regress-bike-events="$ROOT/test/bike/events/rider_intensity_mid.csv"
+cmp -s "$OUT/ftpm255.blog" "$OUT/ftpm300.blog" && fail bike-intensity "FTP 255 and 300 give the same log, so the cases below prove nothing"
+same_run ftpint ftpm255 "the intensity FTP is not the same as typing the effective FTP"
+same_run ftpintman ftpm200 "a manual source did not ignore the intensity preset"
+same_run ftpintcli ftpm250 "--ftms-ftp did not beat the intensity preset"
+same_run ftpintmid ftpm200 "an intensity rider announced mid-level changed the run"
+echo "PASS bike-intensity: 300 W at 85 % == typed 255; manual and --ftms-ftp win; a mid-level preset waits for the next level"
+
 case_run ride1 9000 "$FEEDS/q200b-ride1.csv" --regress-bike-set=surge_superbomb=0
 case_run ride2 12000 "$FEEDS/q200b-ride2.csv" --regress-bike-set=surge_superbomb=0
 cmp -s "$OUT/off12000.f" "$OUT/ride2.f" && fail ride2 "frames equal the stock run"
@@ -359,6 +373,14 @@ SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regres
 [ -s "$OUT/snap-menu-rider.bmp" ] || fail snap-menu-rider "no snapshot was written"
 SNAPS+=(snap-menu-rider)
 cmp -s "$OUT/snap-menu.bmp" "$OUT/snap-menu-rider.bmp" && fail snap-menu-rider "a bridge rider did not change the menu"
+# and with an intensity preset in force: "196 W Easy 85 %"
+SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-screen=bike-menu \
+	--regress-bike-set=enabled=1,surge_special=1,ftp_source=auto --regress-bike-rider=230@85:Ann --regress-frames=40 \
+	--regress-snapshot=30:"$(native_path "$OUT/snap-menu-intensity.bmp")" >"$OUT/snap-menu-intensity.log" 2>&1 \
+	|| fail snap-menu-intensity "the screen run exited with $?"
+[ -s "$OUT/snap-menu-intensity.bmp" ] || fail snap-menu-intensity "no snapshot was written"
+SNAPS+=(snap-menu-intensity)
+cmp -s "$OUT/snap-menu-rider.bmp" "$OUT/snap-menu-intensity.bmp" && fail snap-menu-intensity "a preset did not change the FTP row"
 echo "PASS bike-menu-screens: Setup menu, stepper walk, address edit and a bridge rider render and differ"
 
 # HUD on vs off: presentation only, so the state hashes must be identical.

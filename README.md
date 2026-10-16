@@ -150,6 +150,12 @@ your Flywheel rider when the bridge has one: the Bike menu shows it beside
 FTP, and **FTP Source** switches between the bridge's value and one you type.
 `--ftms-ftp=W` beats both. A new bridge value applies from the next level.
 
+If you pick an intensity preset in Flywheel (Recovery, Easy, Hard, Very hard...), the
+game plays at that preset's FTP, your measured FTP times the preset's percent, and
+the FTP row says so, for example `196 W Easy 85 %`. The FTP you typed is
+never changed, and the preset stops applying when you switch FTP Source to Manual or
+give `--ftms-ftp`.
+
 ## <img src="docs/readme/h-build.svg" alt="Build it" width="100%">
 
 Requires a C99 compiler, GNU make, pkg-config, SDL3 and optionally SDL3_net.

@@ -27,6 +27,10 @@ real bike, and how the controls behave on the Surface. Plan for 45 to 60 minutes
    watts). Setup > Bike and Controls then shows it beside FTP (FTP Source: Bridge) from the next level.
    Otherwise type one under FTP Source: Manual (start with 200 W). `--ftms-ftp=W` on the command line
    beats both the bridge's FTP and the typed one, so leave it off when you want the bridge value.
+   If your Flywheel offers intensity presets, the FTP row then reads like `196 W Easy 85 %`:
+   the game plays at the preset's FTP. Try each preset (Recovery, Easy, Normal, Hard, Very hard) for
+   a level and check that the same watts give a lower effort bar on a harder preset (its FTP is higher) and that the row and
+   help line name the preset. Presets apply from the next level.
 7. Play Tyrian level 1 (or any level you know well). Use a weapon you like, and note the
    generator you start with.
 
