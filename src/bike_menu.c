@@ -100,6 +100,8 @@ void bike_menu_regress_keys(const char *keys)
 	snprintf(regress_keys, sizeof regress_keys, "%s", keys != NULL ? keys : "");
 }
 
+enum { FTP_VALUE_W = 130, HELP_MAX_W = 300 }; /* the value column and the help line, in pixels */
+
 /* The help line; the touch row warns when its fire companion is off (touch has
  * no fire zone: auto-fire is the way to shoot). */
 static const char *row_help(RowId id)
@@ -112,6 +114,26 @@ static const char *row_help(RowId id)
 		BikeFtpInfo info;
 
 		bike_ftp_info(&info);
+		if (info.from_bridge && info.intensity)
+		{
+			/* "Easy 85 % of 230 W (Ann, test). Source Manual to edit."; shed the tail until it fits */
+			char who[24];
+			int pass;
+
+			for (pass = 0; pass < 3; ++pass)
+			{
+				who[0] = '\0';
+				if (pass == 0 && info.source[0] != '\0')
+					snprintf(who, sizeof who, " (%.10s, %.6s)", info.rider, info.source);
+				else if (pass <= 1)
+					snprintf(who, sizeof who, " (%.10s)", info.rider);
+				snprintf(help, sizeof help, "%.14s %u %% of %u W%s. Source Manual to edit.", info.preset,
+				         info.percent, info.measured_w, who);
+				if (JE_textWidth(help, TINY_FONT) <= HELP_MAX_W)
+					break;
+			}
+			return help;
+		}
 		if (info.from_bridge)
 		{
 			snprintf(help, sizeof help, "From Flywheel: %.10s%s%.6s%s. Source Manual to edit.", info.rider,
@@ -177,7 +199,25 @@ static void row_value(RowId id, char *out, size_t cap)
 		BikeFtpInfo info;
 
 		bike_ftp_info(&info);
-		if (info.from_bridge)
+		if (info.from_bridge && info.intensity)
+		{
+			char name[32];
+
+			/* "196 W Easy 85 % of 230 W", else "196 W Easy 85 %" with the name cut to fit.  (The
+			 * large font draws no visible parentheses, so the text has none.) */
+			snprintf(out, cap, "%u W %.14s %u %% of %u W", info.watts, info.preset, info.percent, info.measured_w);
+			snprintf(name, sizeof name, "%.14s", info.preset);
+			while (JE_textWidth(out, FONT_NORMAL) > FTP_VALUE_W)
+			{
+				size_t n = strlen(name);
+
+				snprintf(out, cap, "%u W %s %u %%", info.watts, name, info.percent);
+				if (JE_textWidth(out, FONT_NORMAL) <= FTP_VALUE_W || n <= 1)
+					break;
+				name[n - 1] = '\0';
+			}
+		}
+		else if (info.from_bridge)
 			snprintf(out, cap, "%u W %.10s", info.watts, info.rider);
 		else
 			snprintf(out, cap, "%u W", (unsigned)s->ftp_w);
@@ -300,7 +340,7 @@ static void status_line(char *out, size_t cap, BikeLink *link_out)
 
 void bike_menu(bool in_level)
 {
-	enum { VISIBLE = 9, X_NAME = 24, W_NAME = 140, X_VALUE = X_NAME + W_NAME, W_VALUE = 130, DY = 14,
+	enum { VISIBLE = 9, X_NAME = 24, W_NAME = 140, X_VALUE = X_NAME + W_NAME, W_VALUE = FTP_VALUE_W, DY = 14,
 	       H_ROW = 13, Y_HEADER = 4, Y_ROWS = 34, Y_STATUS = 172, Y_HELP = 188 };
 	SDL_Surface *saved1 = NULL, *saved2 = NULL;
 	size_t selected = 0, top = 0;
