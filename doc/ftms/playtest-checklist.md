@@ -7,19 +7,14 @@ real bike, and how the controls behave on the Surface. Plan for 45 to 60 minutes
 ## 1. Setup
 
 1. Build or unpack the bike-enabled OpenTyrian for Windows, with the Tyrian 2.1 data.
-2. Have the Flywheel checkout next to it (or note its path) and `uv` installed.
+2. Install the Flywheel app and finish its setup (bike, rider) in the browser pages.
 3. Switch the Q200B on, wake it by pedalling, and make sure nothing else holds its
    Bluetooth connection (close the phone app).
-4. Start everything with the launch helper. It starts the Flywheel bridge, waits for
-   `/healthz`, starts the game with `--ftms-bridge=127.0.0.1:8787` and stops the bridge on exit:
-
-   ```
-   tools\ftms\play-with-bike.cmd --flywheel C:\path\to\flywheel --source ble -- --ftms-log=C:\Users\you\ftms-session1.csv
-   ```
-
+4. Double-click `Play with Flywheel.cmd` in the game folder. It starts Flywheel if needed, waits for it,
+   and starts the game with `--ftms-bridge=127.0.0.1:8787`. To write the calibration CSV, start the game
+   yourself with `--ftms-log=C:\Users\you\ftms-session1.csv` (use a new file name each run; the log is
+   overwritten) while Flywheel is running.
    (On Linux or macOS: `tools/ftms/play-with-bike.sh --flywheel PATH --source ble -- --ftms-log=...`.)
-   Everything after `--` goes to the game, so `--ftms-log=FILE` writes the calibration CSV.
-   Use a new file name for each run, because the log is overwritten.
 5. In the game open Setup > Bike and Controls: Enabled on, Generator on, HUD on. Check
    the link dot reaches green (Streaming) while you pedal.
 6. Set your FTP. Best: run `flywheel-bridge calibrate` in the Flywheel checkout (a warm-up, the hardest

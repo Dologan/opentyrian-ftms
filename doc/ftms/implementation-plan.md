@@ -254,7 +254,7 @@ The rider's hands are on the handlebars, in front of a Surface touchscreen, poss
   5. Restart the bridge and assert it reconnects.
 
 **T4.3 Launch helpers** (Haiku)
-- `tools/ftms/play-with-bike.cmd` and `.sh` take a Flywheel checkout path. They start the bridge (`uv run flywheel-bridge run`), wait for `/healthz`, launch the game with `--ftms-bridge=127.0.0.1:8787`, and stop the bridge on exit. Model them on `flywheel/launcher/flywheel.sh`.
+- (Historical; the Windows `.cmd` was replaced by `Play with Flywheel.cmd`.) `tools/ftms/play-with-bike.cmd` and `.sh` took a Flywheel checkout path. They start the bridge (`uv run flywheel-bridge run`), wait for `/healthz`, launch the game with `--ftms-bridge=127.0.0.1:8787`, and stop the bridge on exit. Model them on `flywheel/launcher/flywheel.sh`.
 - Write a README "Playing with an exercise bike" section, and add a `docs/MODERNIZATION.md` entry and a `docs/CHANGELOG.md` entry.
 
 ### Phase 5: Review and calibration readiness

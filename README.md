@@ -129,28 +129,20 @@ waits for it, and starts the game connected to the bike. Flywheel stays in the
 tray afterwards. If Flywheel is missing, a message box offers to play without the
 bike. Nothing needs typing.
 
-**Other setups.** The helper scripts below start the older Python bridge from a
-Flywheel checkout. Do not use them while the Flywheel app is running (both want
-port 8787).
-
-You need:
-
-- a Flywheel checkout (its `bridge/` folder runs the bike link),
-- [uv](https://docs.astral.sh/uv/) on your `PATH`,
-- an FTMS bike, or none at all: `--source sim` simulates one.
-
-From the repository root, run the helper with the path to your Flywheel
-checkout (or set `FLYWHEEL_DIR`):
+**Linux and macOS.** The Flywheel app is Windows-only for now. There, start the
+Python bridge from a Flywheel checkout with the helper (it needs
+[uv](https://docs.astral.sh/uv/) on your `PATH`; use `--source sim` for a
+simulated bike):
 
 ```sh
 tools/ftms/play-with-bike.sh --flywheel ../flywheel              # real bike
 tools/ftms/play-with-bike.sh --flywheel ../flywheel --source sim # simulated bike
 ```
 
-On Windows, run `tools\ftms\play-with-bike.cmd --flywheel ..\flywheel`. The
-helper starts the bridge, waits for it, launches the game with
+The helper starts the bridge, waits for it, launches the game with
 `--ftms-bridge=127.0.0.1:8787`, and stops the bridge when the game exits.
-Anything after `--` goes to the game.
+Anything after `--` goes to the game. Do not use it on Windows: it is for the
+Python bridge only, and would fight the Flywheel app for port 8787.
 
 Turn the bike on in **Setup → Bike and Controls...**, which is also in the in-game menu (as "Bike and Controls").
 The bridge options are `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W` and
