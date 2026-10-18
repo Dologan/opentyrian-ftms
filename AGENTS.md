@@ -19,6 +19,7 @@ The project documentation is in Portuguese: `docs/MODERNIZATION.md` is the curre
   - Tests commit only hashes and metadata (name, size, CRC).
   - `tools/check_no_t2000_data.sh` enforces this in `make regress` and before packaging.
 - **Variant differences live in tables and hooks**, never in scattered `if (variant)`. Nothing is removed from 2.1 to fit 2000.
+- **Private data stays out of this public repository.** No bike or PC identifiers (serial numbers, Bluetooth addresses, device names with a unique suffix), no raw hardware recordings or logs, no user names, home paths other than a placeholder, host names or network addresses, and no `claude.ai/code/session_` links or `Claude-Session:` trailers in commits, PR bodies or files. Use invented values in tests and docs. If a task seems to need such data, ask the owner where it should go instead of committing it. Found some already committed? Tell the owner; removing it means rewriting history, which needs their explicit go-ahead.
 - **Port fork logic by understanding it.** Never paste fork files; cite the fork commit when porting.
 - **Portability:** no absolute user paths in committed files. Regression outputs are opened with `"wb"` (Windows CRLF broke hashes before). New `.c/.h` files also go into `visualc/opentyrian.vcxproj` and `.filters` (the `.vcxproj` is CRLF).
 - **Audit every touched `.c`:** `gcc-16 -std=iso9899:1999 -pedantic -Wall -Wextra -Wno-format-truncation -Wno-missing-field-initializers -Werror -fsyntax-only -DTARGET_UNIX -DWITH_NETWORK -I/opt/homebrew/include <file>`.
