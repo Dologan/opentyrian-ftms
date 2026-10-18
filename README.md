@@ -118,9 +118,20 @@ on both machines (UDP port 1333).
 
 ## Playing with an exercise bike
 
-Modern Tyrian can take power from an FTMS exercise bike through a Flywheel
-bridge. Everything is off by default, so the game plays normally unless you
-turn the bike on.
+Modern Tyrian can take power from an FTMS exercise bike through
+[Flywheel](https://github.com/Dologan/flywheel). Everything is off by default,
+so the game plays normally unless you turn the bike on.
+
+**Windows, no console needed.** Install the Flywheel app once, set up your bike
+and rider in its browser pages, then unpack the Windows package of this game and
+double-click **Play with Flywheel.cmd**. It starts Flywheel if it is not running,
+waits for it, and starts the game connected to the bike. Flywheel stays in the
+tray afterwards. If Flywheel is missing, a message box offers to play without the
+bike. Nothing needs typing.
+
+**Other setups.** The helper scripts below start the older Python bridge from a
+Flywheel checkout. Do not use them while the Flywheel app is running (both want
+port 8787).
 
 You need:
 

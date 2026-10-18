@@ -158,6 +158,7 @@ jobs:
           # bundle every non-system DLL the exe needs (SDL3, SDL3_net, compiler runtime)
           ldd opentyrian.exe | grep -iv "system32\|/c/windows" | awk '{print $3}' | sort -u | xargs -I{} cp {} dist/opentyrian/
           cp -r data dist/opentyrian/data
+          cp tools/ftms/play-with-flywheel.ps1 "tools/ftms/Play with Flywheel.cmd" dist/opentyrian/
           cp COPYING dist/opentyrian/COPYING.txt
           cp doc/tyrian-freeware-license.txt dist/opentyrian/licenses/Tyrian.txt
           for pkg in SDL3 SDL3_net; do
