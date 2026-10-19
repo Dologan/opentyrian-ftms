@@ -1,20 +1,20 @@
-# Inventário estrutural para o indicador PROGRESS
+# Structural inventory for the PROGRESS indicator
 
-Investigação em 2026-10-07, somente leitura, sem builds, execução do jogo ou atualização de baselines. Escopo: scripts de episódios e eventos dos níveis físicos, com interpretação pelos loaders deste checkout. Decisão atual: **PROGRESS** horizontal no estilo de SHIELD, congelado durante boss reconhecido e repetição de trecho. Saída natural antecipada/alternativa pode terminar no percentual atual abaixo de 100%; 100% exige condição positiva do objetivo principal. As barras existentes de HP de boss permanecem.
+Investigation on 2026-10-07, read-only, with no builds, game execution or baseline updates. Scope: episode scripts and the events of the physical levels, as interpreted by this checkout's loaders. Current decision: horizontal **PROGRESS** in the style of SHIELD, frozen during a recognized boss and during a repeated stretch. An early/alternative natural exit may end at the current percentage, below 100%; 100% requires the positive condition of the main objective. The existing boss HP bars remain.
 
-Foram analisados os dados 2.1 em `data/` e os dados 2000 já presentes na localização de instalação do usuário no macOS. `TYRIAN2000_DATA` não estava definido. Nenhum download, instalação, cópia de dados ou exportação de eventos, textos, mapas ou imagens foi feito. O parser e sua saída exclusivamente de metadados ficaram em scratch externo ao repositório. As contagens abaixo pertencem à investigação estática original; a revisão documental posterior as mantém e distingue a implementação conservadora de sua cobertura de execução.
+The 2.1 data in `data/` and the 2000 data already present in the user's installation location on macOS were analyzed. `TYRIAN2000_DATA` was not set. No download, installation, data copy or export of events, texts, maps or images was done. The parser and its metadata-only output stayed in scratch outside the repository. The counts below belong to the original static investigation; the later documentation review keeps them and distinguishes the conservative implementation from its execution coverage.
 
-## O que está sendo contado
+## What is being counted
 
-**Nível físico** é o registro selecionado por `lvlFileNum`: o cabeçalho de `tyrianN.lvl` contém pares de offsets e uma entrada final, portanto `(quantidade_de_offsets - 1) / 2` registros. A entrada final é EOF em E1–E3 e início do bloco de itens em E4/E5; o bloco de itens não é nível. Referência: `src/lvllib.c`, `analyzeLevel`; `src/tyrian2.c`, `JE_loadMap`; [data-formats.md](t2000/data-formats.md).
+**Physical level** is the record selected by `lvlFileNum`: the header of `tyrianN.lvl` contains pairs of offsets and a final entry, therefore `(offset_count - 1) / 2` records. The final entry is EOF in E1–E3 and the start of the item block in E4/E5; the item block is not a level. Reference: `src/lvllib.c`, `analyzeLevel`; `src/tyrian2.c`, `JE_loadMap`; [data-formats.md](t2000/data-formats.md).
 
-**Seção lógica** é cada registro iniciado por `*` no arquivo `levelsN.dat`. Há cenas, menus, escolhas e finais além de comandos de carga `]L`. O loader usa o campo numérico a partir do byte 25 de `]L` para selecionar o nível físico, o campo a partir do byte 9 para a próxima seção e, quando este é zero, `mainLevel + 1`. Seções e cargas não são uma lista de fases alcançáveis: apenas inventário sintático. Uma mesma fase física pode servir a várias rotas e modos.
+**Logical section** is each record started by `*` in the `levelsN.dat` file. There are scenes, menus, choices and endings in addition to `]L` load commands. The loader uses the numeric field from byte 25 of `]L` to select the physical level, the field from byte 9 for the next section and, when that is zero, `mainLevel + 1`. Sections and loads are not a list of reachable levels: they are only a syntactic inventory. The same physical level may serve several routes and modes.
 
-`--regress-level=E:L` seleciona nível físico no cenário; `--regress-script=E:L` passa pelo script e sua seção lógica. Não reutilizar automaticamente os IDs físicos desta tabela como IDs de seção. Os cinco demos apenas cobrem E1, níveis físicos 9, 12, 13, 7 e 5, em ambas as variantes; não constituem cobertura deste inventário.
+`--regress-level=E:L` selects a physical level in the scenario; `--regress-script=E:L` goes through the script and its logical section. Do not automatically reuse the physical IDs in this table as section IDs. The five demos only cover E1, physical levels 9, 12, 13, 7 and 5, in both variants; they do not constitute coverage of this inventory.
 
-## Cobertura estática medida
+## Measured static coverage
 
-| Variante/episódio | Offsets | Níveis físicos | Eventos serializados | Seções lógicas | Comandos de carga | Físicos válidos referenciados | Cargas fora do intervalo |
+| Variant/episode | Offsets | Physical levels | Serialized events | Logical sections | Load commands | Valid physical levels referenced | Out-of-range loads |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | 2.1/E1 | 37 | 18 | 12270 | 42 | 18 | 18 | 0 |
 | 2.1/E2 | 25 | 12 | 10210 | 24 | 12 | 12 | 0 |
@@ -26,180 +26,180 @@ Foram analisados os dados 2.1 em `data/` e os dados 2000 já presentes na locali
 | 2000/E4 | 41 | 20 | 19586 | 51 | 20 | 20 | 0 |
 | 2000/E5 | 17 | 8 | 6186 | 20 | 12 | 8 | 0 |
 
-**2.1:** 62 níveis físicos, 53,338 eventos, 142 seções e 62 comandos de carga. Categorias exclusivas: sequencial=16, condicional=6, chefe=23, recuo=16, retorno=1.
+**2.1:** 62 physical levels, 53,338 events, 142 sections and 62 load commands. Exclusive categories: sequential=16, conditional=6, boss=23, backward=16, return=1.
 
-**2000:** 70 níveis físicos, 59,677 eventos, 168 seções e 76 comandos de carga. Categorias exclusivas: sequencial=18, condicional=5, chefe=27, recuo=19, retorno=1.
+**2000:** 70 physical levels, 59,677 events, 168 sections and 76 load commands. Exclusive categories: sequential=18, conditional=5, boss=27, backward=19, return=1.
 
-Todos os 62 físicos de 2.1 e os 70 de 2000 têm ao menos uma referência sintática válida. Isto não demonstra que cada um seja alcançável em qualquer modo ou dificuldade. Em 2000/E1, duas cargas referenciam L5; há ainda uma carga na seção 44 que solicita ID físico 20, fora dos 18 registros desse contêiner. É uma exceção estrutural a investigar pelo caminho real do intérprete, sem concluir que a carga seja executada ou que exista um vigésimo nível em E1. Em 2000/E5, L1 tem três referências; L3 e L4 têm duas cada. Não usar quantidade de cargas como quantidade de fases.
+All 62 physical levels of 2.1 and the 70 of 2000 have at least one valid syntactic reference. This does not show that each one is reachable in any mode or difficulty. In 2000/E1, two loads reference L5; there is also a load in section 44 that requests physical ID 20, outside the 18 records of that container. It is a structural exception to investigate through the interpreter's real path, without concluding that the load is executed or that a twentieth level exists in E1. In 2000/E5, L1 has three references; L3 and L4 have two each. Do not use the number of loads as the number of levels.
 
-## Categorias e leitura da tabela
+## Categories and reading the table
 
-Categorias exclusivas, por prioridade: **retorno** (evento 76 ou salto com destino especial 65535); **recuo** (salto explícito para tempo menor ou igual ao tempo serializado do evento, incluindo configuração de timer ativo); **chefe** (evento 79 com algum link não zero); **condicional** (evento 61/63/66/70/71/75/80 ou timer); **sequencial** (nenhum dos sinais anteriores). “Sequencial” significa ausência destes sinais, não prova de execução linear. Um evento 57 arma um salto posterior na morte de inimigo; compará-lo com seu tempo de configuração é somente um sinal conservador. Eventos 38 e `JE_eventJump` têm buscas de índice diferentes; a classificação não simula essas buscas.
+Exclusive categories, by priority: **return** (event 76 or a jump with special destination 65535); **backward** (an explicit jump to a time less than or equal to the event's serialized time, including setting an active timer); **boss** (event 79 with some non-zero link); **conditional** (event 61/63/66/70/71/75/80 or timer); **sequential** (none of the previous signals). “Sequential” means absence of these signals, not proof of linear execution. An event 57 arms a later jump on enemy death; comparing it with its setup time is only a conservative signal. Events 38 and `JE_eventJump` have different index searches; the classification does not simulate these searches.
 
-A coluna **11/36** conta os dois marcadores de fim. **79** conta todos os comandos de barra de chefe, inclusive desativação; a categoria chefe exige link não zero. Sinais adicionais sobrepõem categorias: **C** condição; **T** timer 67, ou 84 em 2000; **P** parada de mapa 4, ou 83 em 2000; **R** retorno; **B** recuo. Quantidades são metadados; não são fluxos de eventos ou tempos extraídos.
+The **11/36** column counts the two end markers. **79** counts all boss-bar commands, including deactivation; the boss category requires a non-zero link. Additional signals overlap categories: **C** condition; **T** timer 67, or 84 in 2000; **P** map stop 4, or 83 in 2000; **R** return; **B** backward. Quantities are metadata; they are not extracted event streams or times.
 
-### Variante 2.1
+### Variant 2.1
 
-| Físico | Eventos | 11/36 | 79 | Categoria | Sinais |
+| Physical | Events | 11/36 | 79 | Category | Signals |
 |---|---:|---:|---:|---|---|
-| E1/L1 | 456 | 1/1 | 1 | chefe | P |
-| E1/L2 | 731 | 1/0 | 1 | chefe | P |
-| E1/L3 | 323 | 2/0 | 0 | condicional | C P |
-| E1/L4 | 240 | 0/1 | 0 | sequencial | — |
-| E1/L5 | 545 | 1/2 | 1 | chefe | P |
-| E1/L6 | 440 | 3/0 | 0 | sequencial | — |
-| E1/L7 | 517 | 2/0 | 0 | sequencial | — |
-| E1/L8 | 584 | 2/1 | 1 | chefe | P |
-| E1/L9 | 1009 | 1/1 | 1 | chefe | C |
-| E1/L10 | 248 | 1/1 | 0 | sequencial | — |
-| E1/L11 | 1214 | 2/0 | 0 | condicional | C |
-| E1/L12 | 832 | 2/1 | 1 | chefe | P |
-| E1/L13 | 380 | 1/0 | 0 | sequencial | — |
-| E1/L14 | 838 | 2/0 | 0 | sequencial | — |
-| E1/L15 | 1246 | 1/1 | 1 | chefe | C |
-| E1/L16 | 833 | 0/1 | 2 | recuo | C B |
-| E1/L17 | 1000 | 1/0 | 2 | recuo | C B |
-| E1/L18 | 834 | 1/0 | 0 | recuo | C B |
-| E2/L1 | 1752 | 1/1 | 1 | recuo | C B |
-| E2/L2 | 828 | 1/0 | 1 | chefe | C P |
-| E2/L3 | 178 | 2/1 | 0 | sequencial | — |
-| E2/L4 | 421 | 2/1 | 0 | condicional | C P |
-| E2/L5 | 1304 | 2/0 | 0 | sequencial | — |
-| E2/L6 | 1299 | 1/2 | 1 | recuo | B |
-| E2/L7 | 610 | 1/0 | 2 | recuo | B |
-| E2/L8 | 946 | 2/0 | 0 | condicional | C |
-| E2/L9 | 1256 | 2/2 | 0 | recuo | C B |
-| E2/L10 | 812 | 1/1 | 1 | chefe | — |
-| E2/L11 | 552 | 1/1 | 1 | chefe | — |
-| E2/L12 | 252 | 1/0 | 0 | sequencial | — |
-| E3/L1 | 1205 | 1/0 | 1 | chefe | C P |
-| E3/L2 | 390 | 1/1 | 0 | sequencial | — |
-| E3/L3 | 1021 | 2/0 | 0 | sequencial | — |
-| E3/L4 | 903 | 1/1 | 1 | chefe | — |
-| E3/L5 | 786 | 2/0 | 0 | sequencial | — |
-| E3/L6 | 2259 | 1/1 | 1 | recuo | B |
-| E3/L7 | 672 | 1/1 | 0 | sequencial | — |
-| E3/L8 | 1182 | 1/1 | 1 | chefe | — |
-| E3/L9 | 818 | 2/0 | 0 | condicional | C |
-| E3/L10 | 724 | 2/1 | 1 | chefe | P |
-| E3/L11 | 656 | 1/2 | 1 | chefe | P |
-| E3/L12 | 710 | 2/1 | 0 | sequencial | — |
-| E4/L1 | 1109 | 2/0 | 1 | chefe | C P |
-| E4/L2 | 970 | 2/0 | 0 | sequencial | — |
-| E4/L3 | 1129 | 2/1 | 1 | chefe | C |
-| E4/L4 | 904 | 2/0 | 2 | chefe | C P |
-| E4/L5 | 675 | 3/1 | 2 | chefe | T P |
-| E4/L6 | 640 | 1/1 | 0 | condicional | C |
-| E4/L7 | 1338 | 1/1 | 3 | chefe | C T P |
-| E4/L8 | 750 | 1/1 | 1 | recuo | C B |
-| E4/L9 | 1444 | 1/1 | 2 | chefe | C P |
-| E4/L10 | 552 | 2/0 | 0 | sequencial | — |
-| E4/L11 | 909 | 2/1 | 2 | chefe | C T |
-| E4/L12 | 1243 | 2/0 | 1 | chefe | C |
-| E4/L13 | 1006 | 1/1 | 2 | recuo | C B |
-| E4/L14 | 1022 | 2/1 | 5 | recuo | C B |
-| E4/L15 | 1969 | 1/0 | 3 | recuo | C B |
-| E4/L16 | 666 | 1/1 | 5 | recuo | C B |
-| E4/L17 | 473 | 1/0 | 0 | recuo | C B |
-| E4/L18 | 595 | 0/0 | 0 | retorno | C R B |
-| E4/L19 | 1288 | 1/0 | 1 | recuo | C B |
-| E4/L20 | 850 | 2/0 | 2 | recuo | C T B |
-### Variante 2000
+| E1/L1 | 456 | 1/1 | 1 | boss | P |
+| E1/L2 | 731 | 1/0 | 1 | boss | P |
+| E1/L3 | 323 | 2/0 | 0 | conditional | C P |
+| E1/L4 | 240 | 0/1 | 0 | sequential | — |
+| E1/L5 | 545 | 1/2 | 1 | boss | P |
+| E1/L6 | 440 | 3/0 | 0 | sequential | — |
+| E1/L7 | 517 | 2/0 | 0 | sequential | — |
+| E1/L8 | 584 | 2/1 | 1 | boss | P |
+| E1/L9 | 1009 | 1/1 | 1 | boss | C |
+| E1/L10 | 248 | 1/1 | 0 | sequential | — |
+| E1/L11 | 1214 | 2/0 | 0 | conditional | C |
+| E1/L12 | 832 | 2/1 | 1 | boss | P |
+| E1/L13 | 380 | 1/0 | 0 | sequential | — |
+| E1/L14 | 838 | 2/0 | 0 | sequential | — |
+| E1/L15 | 1246 | 1/1 | 1 | boss | C |
+| E1/L16 | 833 | 0/1 | 2 | backward | C B |
+| E1/L17 | 1000 | 1/0 | 2 | backward | C B |
+| E1/L18 | 834 | 1/0 | 0 | backward | C B |
+| E2/L1 | 1752 | 1/1 | 1 | backward | C B |
+| E2/L2 | 828 | 1/0 | 1 | boss | C P |
+| E2/L3 | 178 | 2/1 | 0 | sequential | — |
+| E2/L4 | 421 | 2/1 | 0 | conditional | C P |
+| E2/L5 | 1304 | 2/0 | 0 | sequential | — |
+| E2/L6 | 1299 | 1/2 | 1 | backward | B |
+| E2/L7 | 610 | 1/0 | 2 | backward | B |
+| E2/L8 | 946 | 2/0 | 0 | conditional | C |
+| E2/L9 | 1256 | 2/2 | 0 | backward | C B |
+| E2/L10 | 812 | 1/1 | 1 | boss | — |
+| E2/L11 | 552 | 1/1 | 1 | boss | — |
+| E2/L12 | 252 | 1/0 | 0 | sequential | — |
+| E3/L1 | 1205 | 1/0 | 1 | boss | C P |
+| E3/L2 | 390 | 1/1 | 0 | sequential | — |
+| E3/L3 | 1021 | 2/0 | 0 | sequential | — |
+| E3/L4 | 903 | 1/1 | 1 | boss | — |
+| E3/L5 | 786 | 2/0 | 0 | sequential | — |
+| E3/L6 | 2259 | 1/1 | 1 | backward | B |
+| E3/L7 | 672 | 1/1 | 0 | sequential | — |
+| E3/L8 | 1182 | 1/1 | 1 | boss | — |
+| E3/L9 | 818 | 2/0 | 0 | conditional | C |
+| E3/L10 | 724 | 2/1 | 1 | boss | P |
+| E3/L11 | 656 | 1/2 | 1 | boss | P |
+| E3/L12 | 710 | 2/1 | 0 | sequential | — |
+| E4/L1 | 1109 | 2/0 | 1 | boss | C P |
+| E4/L2 | 970 | 2/0 | 0 | sequential | — |
+| E4/L3 | 1129 | 2/1 | 1 | boss | C |
+| E4/L4 | 904 | 2/0 | 2 | boss | C P |
+| E4/L5 | 675 | 3/1 | 2 | boss | T P |
+| E4/L6 | 640 | 1/1 | 0 | conditional | C |
+| E4/L7 | 1338 | 1/1 | 3 | boss | C T P |
+| E4/L8 | 750 | 1/1 | 1 | backward | C B |
+| E4/L9 | 1444 | 1/1 | 2 | boss | C P |
+| E4/L10 | 552 | 2/0 | 0 | sequential | — |
+| E4/L11 | 909 | 2/1 | 2 | boss | C T |
+| E4/L12 | 1243 | 2/0 | 1 | boss | C |
+| E4/L13 | 1006 | 1/1 | 2 | backward | C B |
+| E4/L14 | 1022 | 2/1 | 5 | backward | C B |
+| E4/L15 | 1969 | 1/0 | 3 | backward | C B |
+| E4/L16 | 666 | 1/1 | 5 | backward | C B |
+| E4/L17 | 473 | 1/0 | 0 | backward | C B |
+| E4/L18 | 595 | 0/0 | 0 | return | C R B |
+| E4/L19 | 1288 | 1/0 | 1 | backward | C B |
+| E4/L20 | 850 | 2/0 | 2 | backward | C T B |
+### Variant 2000
 
-| Físico | Eventos | 11/36 | 79 | Categoria | Sinais |
+| Physical | Events | 11/36 | 79 | Category | Signals |
 |---|---:|---:|---:|---|---|
-| E1/L1 | 481 | 1/1 | 2 | chefe | P |
-| E1/L2 | 731 | 1/0 | 1 | chefe | P |
-| E1/L3 | 323 | 2/0 | 0 | condicional | C P |
-| E1/L4 | 240 | 0/1 | 0 | sequencial | — |
-| E1/L5 | 552 | 3/2 | 1 | chefe | T P |
-| E1/L6 | 441 | 3/0 | 0 | sequencial | — |
-| E1/L7 | 517 | 2/0 | 0 | sequencial | — |
-| E1/L8 | 602 | 2/1 | 1 | chefe | P |
-| E1/L9 | 1010 | 1/2 | 1 | chefe | C |
-| E1/L10 | 248 | 1/1 | 0 | sequencial | — |
-| E1/L11 | 1214 | 2/0 | 0 | sequencial | — |
-| E1/L12 | 832 | 2/1 | 1 | chefe | P |
-| E1/L13 | 379 | 1/0 | 0 | sequencial | — |
-| E1/L14 | 838 | 2/0 | 0 | sequencial | — |
-| E1/L15 | 1246 | 1/1 | 1 | chefe | C |
-| E1/L16 | 833 | 0/1 | 2 | recuo | C B |
-| E1/L17 | 1003 | 1/1 | 3 | recuo | C B |
-| E1/L18 | 834 | 1/0 | 0 | recuo | C B |
-| E2/L1 | 1752 | 1/1 | 1 | recuo | C B |
-| E2/L2 | 829 | 1/0 | 2 | chefe | C P |
-| E2/L3 | 178 | 2/1 | 0 | sequencial | — |
-| E2/L4 | 421 | 2/1 | 0 | condicional | C P |
-| E2/L5 | 1304 | 2/0 | 0 | sequencial | — |
-| E2/L6 | 1299 | 1/2 | 1 | recuo | B |
-| E2/L7 | 610 | 1/0 | 2 | recuo | B |
-| E2/L8 | 946 | 2/0 | 0 | condicional | C |
-| E2/L9 | 1256 | 2/2 | 0 | recuo | C B |
-| E2/L10 | 806 | 1/1 | 1 | chefe | — |
-| E2/L11 | 552 | 1/1 | 1 | chefe | — |
-| E2/L12 | 252 | 1/0 | 0 | sequencial | — |
-| E3/L1 | 1236 | 1/0 | 1 | chefe | C P |
-| E3/L2 | 390 | 1/1 | 0 | sequencial | — |
-| E3/L3 | 1025 | 2/0 | 0 | sequencial | — |
-| E3/L4 | 902 | 1/1 | 1 | chefe | — |
-| E3/L5 | 786 | 2/0 | 0 | sequencial | — |
-| E3/L6 | 2259 | 1/1 | 1 | recuo | B |
-| E3/L7 | 672 | 1/1 | 0 | sequencial | — |
-| E3/L8 | 1197 | 1/1 | 1 | chefe | — |
-| E3/L9 | 818 | 2/0 | 0 | condicional | C |
-| E3/L10 | 725 | 2/1 | 2 | chefe | P |
-| E3/L11 | 656 | 1/2 | 1 | chefe | P |
-| E3/L12 | 710 | 2/1 | 0 | sequencial | — |
-| E4/L1 | 1109 | 2/0 | 1 | chefe | C P |
-| E4/L2 | 970 | 2/0 | 0 | sequencial | — |
-| E4/L3 | 1188 | 2/1 | 1 | chefe | C |
-| E4/L4 | 904 | 2/0 | 2 | chefe | C P |
-| E4/L5 | 676 | 3/2 | 2 | chefe | T P |
-| E4/L6 | 641 | 2/1 | 0 | condicional | C |
-| E4/L7 | 1329 | 1/1 | 3 | chefe | C T P |
-| E4/L8 | 749 | 1/1 | 1 | recuo | C B |
-| E4/L9 | 1447 | 1/1 | 2 | chefe | C P |
-| E4/L10 | 552 | 2/0 | 0 | sequencial | — |
-| E4/L11 | 909 | 2/1 | 2 | chefe | C T |
-| E4/L12 | 1243 | 2/0 | 1 | chefe | C |
-| E4/L13 | 1006 | 1/1 | 2 | recuo | C B |
-| E4/L14 | 1022 | 2/1 | 5 | recuo | C B |
-| E4/L15 | 1969 | 1/0 | 3 | recuo | C B |
-| E4/L16 | 666 | 1/1 | 5 | recuo | C B |
-| E4/L17 | 473 | 1/0 | 0 | recuo | C B |
-| E4/L18 | 595 | 0/0 | 0 | retorno | C R B |
-| E4/L19 | 1288 | 1/0 | 1 | recuo | C B |
-| E4/L20 | 850 | 2/0 | 2 | recuo | C T B |
-| E5/L1 | 197 | 0/0 | 0 | sequencial | — |
-| E5/L2 | 311 | 1/0 | 2 | chefe | — |
-| E5/L3 | 1000 | 2/0 | 1 | chefe | C T |
-| E5/L4 | 983 | 2/1 | 3 | chefe | T P |
-| E5/L5 | 514 | 1/0 | 3 | recuo | B |
-| E5/L6 | 1442 | 1/1 | 1 | chefe | — |
-| E5/L7 | 894 | 1/1 | 1 | recuo | C B |
-| E5/L8 | 845 | 1/1 | 1 | recuo | B |
+| E1/L1 | 481 | 1/1 | 2 | boss | P |
+| E1/L2 | 731 | 1/0 | 1 | boss | P |
+| E1/L3 | 323 | 2/0 | 0 | conditional | C P |
+| E1/L4 | 240 | 0/1 | 0 | sequential | — |
+| E1/L5 | 552 | 3/2 | 1 | boss | T P |
+| E1/L6 | 441 | 3/0 | 0 | sequential | — |
+| E1/L7 | 517 | 2/0 | 0 | sequential | — |
+| E1/L8 | 602 | 2/1 | 1 | boss | P |
+| E1/L9 | 1010 | 1/2 | 1 | boss | C |
+| E1/L10 | 248 | 1/1 | 0 | sequential | — |
+| E1/L11 | 1214 | 2/0 | 0 | sequential | — |
+| E1/L12 | 832 | 2/1 | 1 | boss | P |
+| E1/L13 | 379 | 1/0 | 0 | sequential | — |
+| E1/L14 | 838 | 2/0 | 0 | sequential | — |
+| E1/L15 | 1246 | 1/1 | 1 | boss | C |
+| E1/L16 | 833 | 0/1 | 2 | backward | C B |
+| E1/L17 | 1003 | 1/1 | 3 | backward | C B |
+| E1/L18 | 834 | 1/0 | 0 | backward | C B |
+| E2/L1 | 1752 | 1/1 | 1 | backward | C B |
+| E2/L2 | 829 | 1/0 | 2 | boss | C P |
+| E2/L3 | 178 | 2/1 | 0 | sequential | — |
+| E2/L4 | 421 | 2/1 | 0 | conditional | C P |
+| E2/L5 | 1304 | 2/0 | 0 | sequential | — |
+| E2/L6 | 1299 | 1/2 | 1 | backward | B |
+| E2/L7 | 610 | 1/0 | 2 | backward | B |
+| E2/L8 | 946 | 2/0 | 0 | conditional | C |
+| E2/L9 | 1256 | 2/2 | 0 | backward | C B |
+| E2/L10 | 806 | 1/1 | 1 | boss | — |
+| E2/L11 | 552 | 1/1 | 1 | boss | — |
+| E2/L12 | 252 | 1/0 | 0 | sequential | — |
+| E3/L1 | 1236 | 1/0 | 1 | boss | C P |
+| E3/L2 | 390 | 1/1 | 0 | sequential | — |
+| E3/L3 | 1025 | 2/0 | 0 | sequential | — |
+| E3/L4 | 902 | 1/1 | 1 | boss | — |
+| E3/L5 | 786 | 2/0 | 0 | sequential | — |
+| E3/L6 | 2259 | 1/1 | 1 | backward | B |
+| E3/L7 | 672 | 1/1 | 0 | sequential | — |
+| E3/L8 | 1197 | 1/1 | 1 | boss | — |
+| E3/L9 | 818 | 2/0 | 0 | conditional | C |
+| E3/L10 | 725 | 2/1 | 2 | boss | P |
+| E3/L11 | 656 | 1/2 | 1 | boss | P |
+| E3/L12 | 710 | 2/1 | 0 | sequential | — |
+| E4/L1 | 1109 | 2/0 | 1 | boss | C P |
+| E4/L2 | 970 | 2/0 | 0 | sequential | — |
+| E4/L3 | 1188 | 2/1 | 1 | boss | C |
+| E4/L4 | 904 | 2/0 | 2 | boss | C P |
+| E4/L5 | 676 | 3/2 | 2 | boss | T P |
+| E4/L6 | 641 | 2/1 | 0 | conditional | C |
+| E4/L7 | 1329 | 1/1 | 3 | boss | C T P |
+| E4/L8 | 749 | 1/1 | 1 | backward | C B |
+| E4/L9 | 1447 | 1/1 | 2 | boss | C P |
+| E4/L10 | 552 | 2/0 | 0 | sequential | — |
+| E4/L11 | 909 | 2/1 | 2 | boss | C T |
+| E4/L12 | 1243 | 2/0 | 1 | boss | C |
+| E4/L13 | 1006 | 1/1 | 2 | backward | C B |
+| E4/L14 | 1022 | 2/1 | 5 | backward | C B |
+| E4/L15 | 1969 | 1/0 | 3 | backward | C B |
+| E4/L16 | 666 | 1/1 | 5 | backward | C B |
+| E4/L17 | 473 | 1/0 | 0 | backward | C B |
+| E4/L18 | 595 | 0/0 | 0 | return | C R B |
+| E4/L19 | 1288 | 1/0 | 1 | backward | C B |
+| E4/L20 | 850 | 2/0 | 2 | backward | C T B |
+| E5/L1 | 197 | 0/0 | 0 | sequential | — |
+| E5/L2 | 311 | 1/0 | 2 | boss | — |
+| E5/L3 | 1000 | 2/0 | 1 | boss | C T |
+| E5/L4 | 983 | 2/1 | 3 | boss | T P |
+| E5/L5 | 514 | 1/0 | 3 | backward | B |
+| E5/L6 | 1442 | 1/1 | 1 | boss | — |
+| E5/L7 | 894 | 1/1 | 1 | backward | C B |
+| E5/L8 | 845 | 1/1 | 1 | backward | B |
 
-## Fim, chefe final e chefe intermediário
+## End, final boss and intermediate boss
 
-Evento **11** inicia saída ou força `reallyEndLevel`, dependendo do parâmetro e de jogadores ausentes. Evento **36** arma `readyToEndLevel`: a saída aguarda `enemyOnScreen == 0` e ausência de explosões pendentes. Há também saída associada à parada de fundo e `waitToEndLevel`. Por isso nem último evento, nem maior tempo serializado, nem último marcador 11/36 representa sozinho uma duração garantida ou sucesso.
+Event **11** starts an exit or forces `reallyEndLevel`, depending on the parameter and on absent players. Event **36** arms `readyToEndLevel`: the exit waits for `enemyOnScreen == 0` and no pending explosions. There is also an exit associated with the background stop and `waitToEndLevel`. For this reason neither the last event, nor the greatest serialized time, nor the last 11/36 marker alone represents a guaranteed duration or success.
 
-Em ambas as variantes, E1/L4 e L16 têm apenas 36; E4/L18 não tem 11 nem 36. Em 2000, E5/L1 também não tem nenhum desses marcadores. Estes dois últimos registros são exceções prioritárias: pode haver retorno, rota externa ou finalização por estado, e não se deve fabricar um denominador pelo máximo tempo. Os demais físicos têm ao menos um dos dois marcadores; isto é cobertura de presença.
+In both variants, E1/L4 and L16 have only 36; E4/L18 has neither 11 nor 36. In 2000, E5/L1 also has neither of these markers. These last two records are priority exceptions: there may be a return, an external route or finalization by state, and a denominator must not be fabricated from the maximum time. The other physical levels have at least one of the two markers; this is presence coverage.
 
-Evento **79 não distingue chefe final de intermediário**: apenas associa até dois links à barra. `draw_boss_bar` consulta inimigos ativos, limpa links sem armadura válida e pode consolidar as barras; evento 70 depende da existência de inimigos por link, não de uma classificação “boss”. Um chefe pode não ter barra 79. Parada de fundo, inimigos comuns restantes e explosões também podem prolongar a fase. Nenhum percentual deve derivar da armadura.
+Event **79 does not distinguish a final boss from an intermediate one**: it only associates up to two links with the bar. `draw_boss_bar` queries active enemies, clears links without valid armor and may consolidate the bars; event 70 depends on the existence of enemies per link, not on a “boss” classification. A boss may have no 79 bar. Background stop, remaining ordinary enemies and explosions may also prolong the level. No percentage should be derived from armor.
 
-Há comandos 79 ativos em 36/62 físicos de 2.1 e 43/70 de 2000. Na ordem serializada, existe marcador de fim depois do último 79 ativo em 35 e 42 deles, respectivamente; a exceção em ambas é E1/L16. São **candidatos estruturais a trecho final**, não 35/42 chefes finais confirmados: salto pode desviar, repetir ou antecipar saída, e spawn posterior pode pertencer ao mesmo chefe. Não classificamos spawn depois de 79 como prova de chefe intermediário. Confirmar a distinção exige observar “barra ativa → barra encerrada → retomada de percurso” versus “barra ativa → conclusão”, com a rota real. Quantidade de 79 tampouco equivale a quantidade de chefes.
+There are active 79 commands in 36/62 physical levels of 2.1 and 43/70 of 2000. In serialized order, an end marker exists after the last active 79 in 35 and 42 of them, respectively; the exception in both is E1/L16. These are **structural candidates for a final stretch**, not 35/42 confirmed final bosses: a jump may divert, repeat or anticipate the exit, and a later spawn may belong to the same boss. We do not classify a spawn after 79 as proof of an intermediate boss. Confirming the distinction requires observing “bar active → bar ended → path resumed” versus “bar active → completion”, with the real route. The number of 79s is likewise not the number of bosses.
 
-## Saltos, loops e condições
+## Jumps, loops and conditions
 
-`curLoc` acompanha a velocidade de fundo e pode avançar com `forceEvents` mesmo quando o fundo está parado; não é tempo de parede nem distância irreversível. Evento 38 reatribui `curLoc`/índice; 54 chama `JE_eventJump`; 57 arma salto de morte de inimigo; 70 salta se grupos de inimigos desapareceram; 71 depende da posição do mapa. `JE_eventJump` guarda `returnLoc = curLoc + 1` e trata destino 65535 como retorno. Evento 76 arma retorno quando os inimigos saírem. E4/L18 apresenta retorno e recuo nas duas variantes. Um indicador que use diretamente `curLoc / último_tempo` pode regredir, atingir um destino remoto indevidamente ou avançar dentro de um loop.
+`curLoc` follows the background speed and may advance with `forceEvents` even when the background is stopped; it is not wall-clock time nor irreversible distance. Event 38 reassigns `curLoc`/index; 54 calls `JE_eventJump`; 57 arms an enemy-death jump; 70 jumps if enemy groups have disappeared; 71 depends on the map position. `JE_eventJump` stores `returnLoc = curLoc + 1` and treats destination 65535 as a return. Event 76 arms a return when the enemies leave. E4/L18 presents return and backward jump in both variants. An indicator that directly uses `curLoc / last_time` may regress, improperly reach a remote destination or advance inside a loop.
 
-Recuos candidatos: E1/L16–18; E2/L1, L6, L7, L9; E3/L6; E4/L8, L13–20, nas duas variantes. Acrescentam-se E5/L5, L7, L8 em 2000. A comparação estática usa tempo do próprio comando, não o instante dinâmico de execução. Não prova que o loop foi tomado nem identifica sozinho todos os ciclos: saltos encadeados, destino de retorno e mutações dos eventos dependem de estado.
+Backward-jump candidates: E1/L16–18; E2/L1, L6, L7, L9; E3/L6; E4/L8, L13–20, in both variants. Add E5/L5, L7, L8 in 2000. The static comparison uses the command's own time, not the dynamic instant of execution. It does not prove that the loop was taken nor does it alone identify all cycles: chained jumps, return destination and event mutations depend on state.
 
-Eventos 61 e 60 relacionam flags e morte de inimigos; 63 depende de 2P ou arcade de 1P; 80 depende de 2P; 66 usa `initialDifficulty <= limiar`, apesar do comentário em inglês sugerir outra comparação. 75 escolhe link aleatório ou pula eventos quando não encontra candidato, inclusive ajustando `curLoc`. Não executar RNG para analisar progresso. Timer 67 salta ao expirar; 84 faz isso somente em Timed Battle. 83 em 2000 reutiliza parada de mapa, 85 só atua em Timed Battle; não aplicar a semântica 2.1 a eventos reatribuídos de 2000 (`gameEventCase`, `src/game_rules.c`).
+Events 61 and 60 relate flags and enemy death; 63 depends on 2P or 1P arcade; 80 depends on 2P; 66 uses `initialDifficulty <= threshold`, although the English comment suggests another comparison. 75 chooses a random link or skips events when it finds no candidate, including adjusting `curLoc`. Do not run RNG to analyze progress. Timer 67 jumps on expiry; 84 does so only in Timed Battle. 83 in 2000 reuses map stop, 85 acts only in Timed Battle; do not apply 2.1 semantics to reassigned 2000 events (`gameEventCase`, `src/game_rules.c`).
 
-No script lógico, `]G` oferece escolhas, `]J` salta, `]2` depende de 2P/arcade, `]w` depende da nave, `]t` do timer, `]l` de morte; `]H` e `]h` dependem de dificuldade. `]T` seleciona seção da batalha e `]q` encerra a batalha apenas nesse modo; `]Q` encerra episódio. Esses comandos não são endpoints temporais do nível físico.
+In the logical script, `]G` offers choices, `]J` jumps, `]2` depends on 2P/arcade, `]w` depends on the ship, `]t` on the timer, `]l` on death; `]H` and `]h` depend on difficulty. `]T` selects the battle section and `]q` ends the battle only in that mode; `]Q` ends the episode. These commands are not time endpoints of the physical level.
 
-| Variante/E | Comandos de rota presentes (contagens sintáticas) |
+| Variant/E | Route commands present (syntactic counts) |
 |---|---|
 | 2.1/E1 | `]J`=8, `]2`=1, `]G`=17, `]H`=1, `]h`=1, `]Q`=1 |
 | 2.1/E2 | `]G`=11, `]Q`=1 |
@@ -211,43 +211,43 @@ No script lógico, `]G` oferece escolhas, `]J` salta, `]2` depende de 2P/arcade,
 | 2000/E4 | `]J`=8, `]2`=3, `]w`=1, `]t`=2, `]l`=1, `]G`=22, `]Q`=1 |
 | 2000/E5 | `]J`=1, `]G`=5, `]T`=1, `]q`=1, `]Q`=1 |
 
-## Relação com a implementação atual
+## Relation to the current implementation
 
-O [contrato de runtime](progress-runtime.md) descreve o observador conservador efetivamente implementado. Ele escolhe em memória o marco positivo 11/36 mais distante, sem provar alcançabilidade, e acompanha avanço local com orçamento até 99%. Não utiliza estas categorias como perfis certificados nem implementa um grafo por fase. Saltos para frente não creditam endereços pulados; recuos congelam abaixo da fronteira anterior. Retorno e reposições 38/75 invalidam suporte; ausência de denominador inicia indisponibilidade, omitida no HUD. Assim E4/L18 e 2000/E5/L1 são casos de fallback, não percursos completos resolvidos.
+The [runtime contract](progress-runtime.md) describes the conservative observer actually implemented. It chooses in memory the most distant positive 11/36 milestone, without proving reachability, and follows local advancement with a budget up to 99%. It does not use these categories as certified profiles nor implement a per-level graph. Forward jumps do not credit skipped addresses; backward jumps freeze below the previous frontier. Return and 38/75 replacements invalidate support; absence of a denominator starts unavailability, omitted from the HUD. Thus E4/L18 and 2000/E5/L1 are fallback cases, not resolved complete paths.
 
-Boss pausa apenas quando há inimigo ativo com armadura positiva ligado às barras existentes. A implementação não distingue universalmente boss intermediário/final, não mede dano e não preenche PROGRESS pelo desaparecimento da barra. O objetivo principal exige execução do marco escolhido, posição suficiente e saída natural resolvida com sobrevivente, sem bloqueio negativo. **Saída antecipada ou alternativa preserva o percentual atual abaixo de 100% até reset, sem promoção por marco posterior no warp.** `reallyEndLevel` ou avanço de campanha isolados continuam insuficientes.
+Boss pauses only when there is an active enemy with positive armor linked to the existing bars. The implementation does not universally distinguish an intermediate/final boss, does not measure damage and does not fill PROGRESS by the disappearance of the bar. The main objective requires execution of the chosen milestone, sufficient position and a natural exit resolved with a survivor, with no negative block. **An early or alternative exit preserves the current percentage below 100% until reset, with no promotion by a later milestone during warp.** `reallyEndLevel` or campaign advancement in isolation remain insufficient.
 
-Grafos com pesos por trecho, perfis de chamada/retorno, identidade de encontros e certificação por variante/modo são evolução futura. Os 62/70 níveis inventariados demonstram cobertura estática de registros e referências, não avanço útil em todos os mapas, alcance de todos os ramos ou vitória sobre bosses.
+Graphs with per-stretch weights, call/return profiles, encounter identity and certification per variant/mode are future work. The 62/70 inventoried levels demonstrate static coverage of records and references, not useful advancement in all maps, reaching all branches or victory over bosses.
 
-## Cobertura de execução: escopo separado
+## Execution coverage: separate scope
 
-O guard `tools/check_progress.sh` contém fixtures escalares e sondagens iniciais OFF/ON em E1/L6, E1/L4, E1/L16 e E4/L18, mais E5/L1 em 2000. As sondagens de 300 frames exigem eventos/avanço quando aplicável; não certificam recuos/retornos apenas por selecionar um candidato estrutural. O script 1:3 exercita input/movimento, autofire e pausa. O boss E1/L1 é uma fixture acelerada, não um percurso natural nem derrota final. Fixtures negativas usam o latch comum do modelo, sem provar todos os hooks de gameplay.
+The `tools/check_progress.sh` guard contains scalar fixtures and initial OFF/ON probes in E1/L6, E1/L4, E1/L16 and E4/L18, plus E5/L1 in 2000. The 300-frame probes require events/advancement where applicable; they do not certify backward jumps/returns merely by selecting a structural candidate. The 1:3 script exercises input/movement, autofire and pause. The E1/L1 boss is an accelerated fixture, not a natural path nor a final defeat. Negative fixtures use the model's common latch, without proving all gameplay hooks.
 
-O coordenador confirmou probes release finais nas duas variantes: E1/L6 termina a 52% com saída antecipada, E1/L4 resolve objetivo principal a 100% e E4/L7 em 2P/fire, VFX OFF, mostra três retomadas de boss com avanço posterior (5/3) e termina a 45%/43%. Detalhes e limites estão em [progress-runtime.md](progress-runtime.md). O coordenador confirmou as suítes release finais: **172 casos 2.1 e 153 casos 2000, com os guards existentes e de PROGRESS passando**. Isso valida a matriz executada, sem transformar o inventário em certificação por caminho. Nenhum PASS é inferido deste inventário ou de leitura de fonte. A matriz abaixo trata de ampliação de cobertura, sem exigir certificação universal para entregar o fallback conservador.
+The coordinator confirmed final release probes in both variants: E1/L6 ends at 52% with an early exit, E1/L4 resolves the main objective at 100% and E4/L7 in 2P/fire, VFX OFF, shows three boss resumptions with later advancement (5/3) and ends at 45%/43%. Details and limits are in [progress-runtime.md](progress-runtime.md). The coordinator confirmed the final release suites: **172 cases 2.1 and 153 cases 2000, with the existing guards and the PROGRESS ones passing**. This validates the executed matrix, without turning the inventory into per-path certification. No PASS is inferred from this inventory or from reading the source. The matrix below deals with expanding coverage, without requiring universal certification to deliver the conservative fallback.
 
-## Ampliação de cobertura ainda necessária
+## Coverage expansion still needed
 
-1. Ampliar os probes de E1/L6 (saída antecipada) e E1/L4 (objetivo principal) para causas simultâneas, inimigos/explosões pendentes e persistência da apresentação em diferentes overlays/fades.
-2. E1/L16 e L17, E2/L1 e E3/L6: registrar metadados de saltos tomados, pausas e retomadas; verificar que a barra não cresce durante repetição nem regride ao voltar. E1/L16 é prioridade por 79 ativo sem marcador posterior na ordem serializada.
-3. E4/L18 em ambas as variantes, e E5/L1 em 2000: resolver finalização/retorno real e selecionar denominador antes de considerá-los cobertos. Conferir a carga fora do intervalo na seção lógica 44 de 2000/E1 pelo intérprete e pelas rotas de batalha.
-4. Além da retomada com avanço já observada em E4/L7, distinguir identidade/etapas de chefe final: verificar ausência de barra, dois links, desativação, transformações e explosões pendentes. A presença de 79 não satisfaz essa ampliação.
-5. E4/L5, L7, L11 e L20: comparar timer expirado/não expirado; E4/L20 inclui recuo. Em 2000, acrescentar E1/L5 e E5/L3–4 no modo comum e em Timed Battle, além de E5/L5, L7–8 para loops.
-6. Exercitar 1P Full Game, arcade e 2P nas rotas `]2`, eventos 63/80; dificuldade normal/hard e ambos os lados de cada limiar 66 presente; escolha `]G`, nave `]w`, morte `]l` e timer `]t`. O mínimo representativo não substitui a cobertura por caminho.
-7. Morte, desistência, restart/backup, bônus e conclusão de batalha: nunca promover fracasso a 100%. Pausa de menu e transição de nível devem preservar/resetar apenas o estado visual apropriado.
+1. Extend the E1/L6 (early exit) and E1/L4 (main objective) probes to simultaneous causes, pending enemies/explosions and persistence of the presentation across different overlays/fades.
+2. E1/L16 and L17, E2/L1 and E3/L6: record metadata of jumps taken, pauses and resumptions; verify that the bar does not grow during repetition nor regress when returning. E1/L16 is a priority because of an active 79 with no later marker in serialized order.
+3. E4/L18 in both variants, and E5/L1 in 2000: resolve the real finalization/return and select a denominator before considering them covered. Check the out-of-range load in logical section 44 of 2000/E1 through the interpreter and the battle routes.
+4. Beyond the resumption with advancement already observed in E4/L7, distinguish final-boss identity/stages: verify absence of a bar, two links, deactivation, transformations and pending explosions. The presence of 79 does not satisfy this expansion.
+5. E4/L5, L7, L11 and L20: compare expired/non-expired timer; E4/L20 includes a backward jump. In 2000, add E1/L5 and E5/L3–4 in the common mode and in Timed Battle, plus E5/L5, L7–8 for loops.
+6. Exercise 1P Full Game, arcade and 2P on the `]2` routes, events 63/80; normal/hard difficulty and both sides of each 66 threshold present; `]G` choice, `]w` ship, `]l` death and `]t` timer. The representative minimum does not replace per-path coverage.
+7. Death, giving up, restart/backup, bonuses and battle completion: never promote failure to 100%. Menu pause and level transition must preserve/reset only the appropriate visual state.
 
-Usar `--regress-level` para sondagem física e `--regress-script`/`flow` para o caminho real de seção/menu; logs de cobertura devem demonstrar a execução efetiva dos marcadores e transições. Esta tarefa documental não executou esses ensaios; resultados recebidos do coordenador estão identificados separadamente. Toda evidência de 2000 deve permanecer em hashes/metadados e cobertura agregada; não gerar screenshots nem despejos de eventos. O inventário não autoriza alterações de baseline; as invariantes de Classic continuam obrigatórias.
+Use `--regress-level` for physical probing and `--regress-script`/`flow` for the real section/menu path; coverage logs must demonstrate the effective execution of the markers and transitions. This documentation task did not run these trials; results received from the coordinator are identified separately. All 2000 evidence must remain in hashes/metadata and aggregated coverage; do not generate screenshots nor event dumps. The inventory does not authorize baseline changes; the Classic invariants remain mandatory.
 
-## Reprodução em somente leitura
+## Read-only reproduction
 
-O procedimento não exige build: Python 3, `struct`, `collections`, `hashlib` e `pathlib`. Abrir arquivos em modo binário de leitura; nunca exportar os buffers. Para 2000, usar somente `TYRIAN2000_DATA` existente ou instalação já presente do usuário. Falta de instalação significa cobertura indisponível, nunca autorização de download.
+The procedure does not require a build: Python 3, `struct`, `collections`, `hashlib` and `pathlib`. Open files in binary read mode; never export the buffers. For 2000, use only an existing `TYRIAN2000_DATA` or an installation already present for the user. A missing installation means coverage unavailable, never authorization to download.
 
-Algoritmo exato do inventário: ler u16 do cabeçalho e os u32 offsets; verificar quantidade ímpar e offsets ordenados; para cada offset de índice par anterior ao final, pular 8 bytes, ler u16 da quantidade de inimigos, pular seus IDs u16, ler u16 da quantidade de eventos e decodificar em memória essa quantidade de registros com `struct.unpack_from('<HBhhbbbB', buffer, posição)`, passo 11. Confirmar que o fim dos eventos não ultrapassa o próximo offset. Contar 11, 36 e 79; classificar pelos predicados acima. Timer conta pela presença do tipo; recuo de timer exige parâmetro de ativação igual a 1 e destino menor ou igual ao tempo do comando. O conjunto de saltos comparados para recuo é 38/54/57/70/71; o conjunto de destinos especiais usado para retorno é 54/70/71, acrescido da presença de 76. Destinos s16 de salto são reinterpretados como u16 (`valor & 65535`). Chefe ativo significa primeiro ou segundo parâmetro de 79 não zero. Candidato final significa índice do último 79 ativo anterior ao índice do último 11/36, sem análise de alcançabilidade.
+Exact algorithm of the inventory: read the header u16 and the u32 offsets; check for an odd count and ordered offsets; for each even-index offset before the final one, skip 8 bytes, read the u16 enemy count, skip their u16 IDs, read the u16 event count and decode that number of records in memory with `struct.unpack_from('<HBhhbbbB', buffer, posição)`, step 11. Confirm that the end of the events does not go past the next offset. Count 11, 36 and 79; classify by the predicates above. Timer counts by the presence of the type; a timer backward jump requires an activation parameter equal to 1 and a destination less than or equal to the command's time. The set of jumps compared for backward is 38/54/57/70/71; the set of special destinations used for return is 54/70/71, plus the presence of 76. Jump s16 destinations are reinterpreted as u16 (`value & 65535`). Active boss means the first or second parameter of 79 non-zero. Final candidate means the index of the last active 79 before the index of the last 11/36, without reachability analysis.
 
-Para scripts: ler tamanho u8 seguido desse número de bytes; decifrar de trás para frente com XOR da chave do loader `{204,129,63,255,71,19,25,62,1,99}`, repetida a cada dez bytes, e do byte cifrado anterior (exceto índice zero). Contar registros `*` e comandos `]`; somente para `]L`, converter o campo a partir do índice 25 como `atoi` (primeiro inteiro com espaços/sinal opcionais). Agrupar referências por ID físico e registrar contagens, nunca texto. Esta varredura sintática não executa consumo contextual de linhas por `]I`, `]W`, `]Q` ou `]h`; portanto as contagens de comandos devem ser confrontadas com interpretação real, especialmente a exceção de E1. Para reproduzir as categorias, usar conjuntos de eventos exatamente declarados nesta seção e na legenda.
+For scripts: read a u8 size followed by that number of bytes; decrypt from back to front with XOR of the loader key `{204,129,63,255,71,19,25,62,1,99}`, repeated every ten bytes, and of the previous encrypted byte (except index zero). Count `*` records and `]` commands; only for `]L`, convert the field from index 25 as `atoi` (first integer with optional spaces/sign). Group references by physical ID and record counts, never text. This syntactic scan does not perform the contextual line consumption by `]I`, `]W`, `]Q` or `]h`; therefore the command counts must be checked against the real interpretation, especially the E1 exception. To reproduce the categories, use event sets exactly as declared in this section and in the legend.
 
-SHA-256 dos contêineres e scripts analisados (identificação de entrada, sem conteúdo):
+SHA-256 of the analyzed containers and scripts (input identification, no content):
 
-| Variante/E | `tyrianN.lvl` | `levelsN.dat` |
+| Variant/E | `tyrianN.lvl` | `levelsN.dat` |
 |---|---|---|
 | 2.1/E1 | `b41e532214fa8cea36e37fed6512b357c6ac9c8c3267899ceb4a258fcb1bf0b9` | `e82164c96abb994450d416a3ab0e5fe6479fd4db831cd0f203a60dfe4aa78dcb` |
 | 2.1/E2 | `3e18b124cd4ff5f766e5bf2e833eb79d3118010a253a30dc4c0ae6f483ae50e9` | `9aa94b70aae2b24b16c295ed86e392ac16873306012bdd89e0cf995d605178ea` |
@@ -259,4 +259,4 @@ SHA-256 dos contêineres e scripts analisados (identificação de entrada, sem c
 | 2000/E4 | `6589b898094887925e7717c8663c4b8b5e4b76f3c89a7898ed9f4691c1f2cc16` | `5c12be86d167f7ad3ffb6821ab19da6edf8a2a252ef03b7044f959ee16871482` |
 | 2000/E5 | `275b5aaf55caecee8dc95e26f7cf118a9ee265f095ce61945b9ece56a4523323` | `788710b2321fc58b8fbe43da960be8bb8370ef5595f63c62e5ed3a17e008797f` |
 
-Confiança: alta para contagens/formato, moderada para sinais estruturais de risco, não estabelecida para alcançabilidade, número real de chefes, duração e sucesso. Fontes locais de semântica: `src/tyrian2.c` (`JE_loadMap`, `JE_eventSystem`, `JE_eventJump`, `draw_boss_bar`, `start_level`), `src/helptext.c` (decifração), `src/game_rules.c`, `src/regress.c`, `tools/scan_smoothies.py`; nenhuma alteração nesses arquivos.
+Confidence: high for counts/format, moderate for structural risk signals, not established for reachability, actual number of bosses, duration and success. Local sources of semantics: `src/tyrian2.c` (`JE_loadMap`, `JE_eventSystem`, `JE_eventJump`, `draw_boss_bar`, `start_level`), `src/helptext.c` (decryption), `src/game_rules.c`, `src/regress.c`, `tools/scan_smoothies.py`; no changes to those files.

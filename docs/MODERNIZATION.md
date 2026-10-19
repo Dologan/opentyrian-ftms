@@ -1,334 +1,334 @@
-# Modern Tyrian — Estado atual da modernização
+# Modern Tyrian — Current state of the modernization
 
-Este documento descreve **como o projeto é hoje**, para o Tyrian 2.1 (freeware) e o Tyrian 2000 juntos. Não é um diário: o histórico (o que mudou, por quê, commits, causas de bugs, decisões datadas) está em [CHANGELOG.md](CHANGELOG.md). Regras para agentes e comandos de build/teste estão no [`AGENTS.md`](../AGENTS.md).
+This document describes **how the project is today**, for Tyrian 2.1 (freeware) and Tyrian 2000 together. It is not a diary: the history (what changed, why, commits, causes of bugs, dated decisions) is in [CHANGELOG.md](CHANGELOG.md). Rules for agents and build/test commands are in [`AGENTS.md`](../AGENTS.md).
 
-> **Princípio:** fazer o Tyrian parecer e se comportar como um jogo moderno sem virar um remake.
-> **Fronteira arquitetural:** o gameplay conhece o playfield original; o render conhece o display moderno.
+> **Principle:** make Tyrian look and behave like a modern game without turning it into a remake.
+> **Architectural boundary:** the gameplay knows the original playfield; the renderer knows the modern display.
 
-Documentos de apoio:
+Supporting documents:
 
-| Documento | Conteúdo |
+| Document | Contents |
 |---|---|
-| [t2000/fork-diff.md](t2000/fork-diff.md) | Classificação das mudanças do fork OpenTyrian2000 |
-| [t2000/data-formats.md](t2000/data-formats.md) | Formatos, contagens e layout do save do 2000 |
-| [t2000/integration.md](t2000/integration.md) | Pontos de integração, API da variante, suíte `regress-2000` |
-| [CRT.md](CRT.md) | Filtro CRT (NTSC e scanlines): teoria e implementação |
-| [STEAM_DECK.md](STEAM_DECK.md) | Instalação e solução de problemas no Steam Deck |
-| [progress-runtime.md](progress-runtime.md), [progress-levels.md](progress-levels.md) | Barra PROGRESS: observador de runtime e inventário de níveis |
+| [t2000/fork-diff.md](t2000/fork-diff.md) | Classification of the changes in the OpenTyrian2000 fork |
+| [t2000/data-formats.md](t2000/data-formats.md) | Formats, counts and save layout of 2000 |
+| [t2000/integration.md](t2000/integration.md) | Integration points, variant API, the `regress-2000` suite |
+| [CRT.md](CRT.md) | CRT filter (NTSC and scanlines): theory and implementation |
+| [STEAM_DECK.md](STEAM_DECK.md) | Installation and troubleshooting on the Steam Deck |
+| [progress-runtime.md](progress-runtime.md), [progress-levels.md](progress-levels.md) | PROGRESS bar: runtime observer and level inventory |
 
 ---
 
-## 1. O que é o projeto
+## 1. What the project is
 
-Um OpenTyrian modernizado (C99, SDL3) que joga **dois jogos com um só binário**:
+A modernized OpenTyrian (C99, SDL3) that plays **two games with a single binary**:
 
-- **Tyrian 2.1 Freeware**: os dados vão no pacote (`./data`, baixados por `get_data.sh`).
-- **Tyrian 2000**: portado da funcionalidade do fork `KScl/opentyrian2000` (GPL-2.0, pino `aad5aca`, 2026-02-22). Os dados **nunca** são distribuídos pelo projeto: o usuário instala ou aponta.
+- **Tyrian 2.1 Freeware**: the data ships in the package (`./data`, downloaded by `get_data.sh`).
+- **Tyrian 2000**: ported from the functionality of the `KScl/opentyrian2000` fork (GPL-2.0, pinned at `aad5aca`, 2026-02-22). The data is **never** distributed by the project: the user installs it or points to it.
 
-Dois modos de apresentação, escolhidos em *Setup → Graphics → Presentation*:
+Two presentation modes, chosen in *Setup → Graphics → Presentation*:
 
-- **Classic**: o caminho original, intocado (mesmo framebuffer de 8 bits e mesma ordem de RNG do upstream).
-- **Modern**: camada de apresentação sobre o mesmo jogo (widescreen, HUD novo, interpolação, luz, VFX, profundidade, CRT…).
+- **Classic**: the original path, untouched (same 8-bit framebuffer and same RNG order as upstream).
+- **Modern**: a presentation layer over the same game (widescreen, new HUD, interpolation, light, VFX, depth, CRT…).
 
-Branches: cada tarefa roda em seu próprio branch/worktree a partir do `master` (`vittau/<tarefa>`), é publicada, passa na CI nos três sistemas e o `master` avança por fast-forward até ela (o branch `modernization` é antigo e não é mais usado). O `origin` é `github.com/vittau/modern-tyrian`.
-
----
-
-## 2. Regras e invariantes
-
-1. **O 2.1 não regride.** O Classic é byte a byte igual ao upstream. Toda mudança de baseline do 2.1 precisa de um motivo explícito.
-2. **A camada Modern é só apresentação.** Nunca escreve estado de jogo, nunca chama `mt_rand`/`mt_rand_1`/`mt_rand_lt1`; usa RNG próprio. Efeitos extras nunca passam por `JE_setupExplosion` nem `JE_doSP`. Passes do Modern (`src/modern.h`) são `void pass(ModernFrame *)`: determinísticos, em ordem de registro, uma vez por quadro apresentado, na grade lógica.
-3. **Efeitos na resolução original.** VFX, luz, bloom, partículas e profundidade vivem na grade lógica de 320×200 (ampliada com o mesmo scaling dos sprites). Nada é desenhado em resolução de tela (a exceção é o launcher).
-4. **Arte nova só procedural**: gerada por código (ruído, gradientes, derivação dos sprites e tiles originais). Nada de sprites redesenhados em alta resolução. Única exceção: a arte pintada dos painéis do launcher (gerada por um worker Codex, arte original, origem em `assets/launcher/SOURCES.md`).
-5. **Dados do Tyrian 2000 nunca entram em git, releases, LFS, caches, logs ou qualquer hospedagem do projeto**: nem o zip, nem arquivos dele, nem sprite, texto, mapa ou captura extraídos. Testes commitam só hashes e metadados (nome, tamanho, CRC). `tools/check_no_t2000_data.sh` impõe isso no `make regress` e antes do empacotamento. Os dados não têm texto de licença: nunca presumir a licença do código.
-6. **Diferenças de variante vivem em tabelas e hooks**, nunca em `if (variant)` espalhado. Nada é removido do 2.1 para acomodar o 2000, e cada versão mantém seu comportamento histórico.
-7. **Portar o fork entendendo, não colando.** Nunca copiar arquivos do fork em bloco; citar o commit de origem na mensagem.
-8. **Portabilidade:** sem caminhos absolutos de usuário em arquivos commitados; saídas de regressão abertas com `"wb"` (o CRLF do Windows já quebrou hashes); `.c/.h` novos entram em `visualc/opentyrian.vcxproj` e `.filters` (o `.vcxproj` é CRLF); `%zu` não passa no MinGW (usar `%lu` com cast).
-9. **Auditar todo `.c` tocado** com `gcc-16 -std=iso9899:1999 -pedantic -Wall -Wextra -Wno-format-truncation -Wno-missing-field-initializers -Werror -fsyntax-only -DTARGET_UNIX -DWITH_NETWORK -I/opt/homebrew/include <arquivo>`. O clang do macOS aceita construções que o GCC rejeita e não acusa header padrão faltando; só a CI em Linux/Windows pega o segundo caso.
-10. **A regressão nunca toca o usuário:** regress e selftest cortam o acesso ao diretório do usuário (`userFilesDisable()`); config e saves não são lidos nem gravados.
-11. **Nunca rodar duas regressões no mesmo checkout** (cada execução faz `rm -rf test/regress/actual/`).
+Branches: each task runs in its own branch/worktree from `master` (`vittau/<tarefa>`), is published, passes CI on the three systems, and `master` is fast-forwarded to it (the `modernization` branch is old and no longer used). The `origin` is `github.com/vittau/modern-tyrian`.
 
 ---
 
-## 3. Arquitetura
+## 2. Rules and invariants
 
-### 3.1 Ordem de inicialização
+1. **2.1 does not regress.** Classic is byte-for-byte identical to upstream. Every 2.1 baseline change needs an explicit reason.
+2. **The Modern layer is presentation only.** It never writes game state, never calls `mt_rand`/`mt_rand_1`/`mt_rand_lt1`; it uses its own RNG. Extra effects never go through `JE_setupExplosion` or `JE_doSP`. Modern passes (`src/modern.h`) are `void pass(ModernFrame *)`: deterministic, in registration order, once per presented frame, on the logical grid.
+3. **Effects at the original resolution.** VFX, light, bloom, particles and depth live on the 320×200 logical grid (enlarged with the same scaling as the sprites). Nothing is drawn at screen resolution (the exception is the launcher).
+4. **New art only procedural**: generated by code (noise, gradients, derivation from the original sprites and tiles). No high-resolution redrawn sprites. The only exception: the painted art of the launcher panels (generated by a Codex worker, original art, origin in `assets/launcher/SOURCES.md`).
+5. **Tyrian 2000 data never goes into git, releases, LFS, caches, logs or any project hosting**: neither the zip, nor files from it, nor an extracted sprite, text, map or capture. Tests commit only hashes and metadata (name, size, CRC). `tools/check_no_t2000_data.sh` enforces this in `make regress` and before packaging. The data has no license text: never presume the license of the code.
+6. **Variant differences live in tables and hooks**, never in scattered `if (variant)`. Nothing is removed from 2.1 to accommodate 2000, and each version keeps its historical behavior.
+7. **Port the fork by understanding, not pasting.** Never copy fork files in bulk; cite the source commit in the message.
+8. **Portability:** no absolute user paths in committed files; regression outputs opened with `"wb"` (Windows CRLF has already broken hashes); new `.c/.h` files go into `visualc/opentyrian.vcxproj` and `.filters` (the `.vcxproj` is CRLF); `%zu` does not pass on MinGW (use `%lu` with a cast).
+9. **Audit every touched `.c`** with `gcc-16 -std=iso9899:1999 -pedantic -Wall -Wextra -Wno-format-truncation -Wno-missing-field-initializers -Werror -fsyntax-only -DTARGET_UNIX -DWITH_NETWORK -I/opt/homebrew/include <arquivo>`. macOS clang accepts constructs that GCC rejects and does not flag a missing standard header; only CI on Linux/Windows catches the second case.
+10. **Regression never touches the user:** regress and selftest cut off access to the user directory (`userFilesDisable()`); config and saves are neither read nor written.
+11. **Never run two regressions in the same checkout** (each run does `rm -rf test/regress/actual/`).
 
-1. **`bootstrap.c`** (`gameBootstrapParse`), primeiro em `main`: flags iniciais (`--variant`, `--data`, regress/selftest). Arquivos de usuário ficam desligados até a variante ser conhecida.
-2. **`game_variant.[ch]`**: `GameVariantDef` para 2.1 e 2000 (nomes, `save_namespace` `tyrian21`/`tyrian2000`, 4 ou 5 episódios, ponteiros para schema, UI e regras). `gameVariantCurrent()`.
-3. **`launcher.[ch]`**: primeira tela do próprio binário, desenhada com SDL no tamanho físico da janela (ver 3.5).
-4. **`game_data.[ch]`**: `GameDataProvider` localiza, valida (diagnósticos de variante errada nos dois sentidos) e abre dados só para leitura, sem fallback por arquivo entre pastas.
-5. **`file.c`**: raiz do usuário, namespaces por variante e a migração única do 2.1 (`userPathsMigrateLegacy21`), antes de `loadSaves`.
-6. **Loaders** leem `game_schema.[ch]` (`gameSchema()`, `gameStrings()`, rótulos semânticos `GAME_LABEL_*`): bancos de itens/inimigos, seções de strings, bancos de shapes (12/13), imagens e paletas, sfx e vozes, créditos, episódios. Regras vêm de `game_rules.[ch]` (`gameRules()`: eventos 58/59/68/83/84/85/99, launch/spawn, twiddles, naves do arcade, sidekicks com carga, Flying Punch, dinheiro, Timed Battle). UI vem de `gameUi()`. `highscores.[ch]` guarda os placares das duas variantes.
-7. **Renderer Modern** (`modern*.c`, `vfx*.c`, `drawlist.c`, `interp.c`, `crt_filter.c`, `ntsc.c`): independente de variante. Luz e tags vêm do contexto do objeto, não do id do sprite; o HUD usa rótulos semânticos; as demos de atração seguem o HUD do modo ativo; modais sobre o layout pic-1 alargado usam `modern_dialog_begin/end`. Mudanças de janela precisam assentar com `SDL_SyncWindow` antes de ler a geometria (o Cocoa é assíncrono).
+---
 
-### 3.2 Fluxo de quadro (Modern)
+## 3. Architecture
+
+### 3.1 Initialization order
+
+1. **`bootstrap.c`** (`gameBootstrapParse`), first in `main`: early flags (`--variant`, `--data`, regress/selftest). User files stay disabled until the variant is known.
+2. **`game_variant.[ch]`**: `GameVariantDef` for 2.1 and 2000 (names, `save_namespace` `tyrian21`/`tyrian2000`, 4 or 5 episodes, pointers to schema, UI and rules). `gameVariantCurrent()`.
+3. **`launcher.[ch]`**: the binary's own first screen, drawn with SDL at the physical size of the window (see 3.5).
+4. **`game_data.[ch]`**: `GameDataProvider` locates, validates (wrong-variant diagnostics in both directions) and opens data read-only, with no per-file fallback between folders.
+5. **`file.c`**: user root, per-variant namespaces and the one-time 2.1 migration (`userPathsMigrateLegacy21`), before `loadSaves`.
+6. **Loaders** read `game_schema.[ch]` (`gameSchema()`, `gameStrings()`, semantic labels `GAME_LABEL_*`): item/enemy banks, string sections, shape banks (12/13), pictures and palettes, sfx and voices, credits, episodes. Rules come from `game_rules.[ch]` (`gameRules()`: events 58/59/68/83/84/85/99, launch/spawn, twiddles, arcade ships, charging sidekicks, Flying Punch, cash, Timed Battle). UI comes from `gameUi()`. `highscores.[ch]` holds the high-score boards of both variants.
+7. **Modern renderer** (`modern*.c`, `vfx*.c`, `drawlist.c`, `interp.c`, `crt_filter.c`, `ntsc.c`): variant-independent. Light and tags come from the object's context, not from the sprite id; the HUD uses semantic labels; the attract demos follow the active mode's HUD; modals over the widened pic-1 layout use `modern_dialog_begin/end`. Window changes must settle with `SDL_SyncWindow` before the geometry is read (Cocoa is asynchronous).
+
+### 3.2 Frame flow (Modern)
 
 ```text
-Tick de lógica original (~34,8 Hz, intocado)
-   │  desenha no framebuffer 8 bits 320×200
-   │  + tag buffer paralelo (categoria e emissão de cada pixel)
-   │  + buffer de camada por pixel (qual camada pintou)
-   │  + lista de desenho do tick (cada blit com identidade de objeto)
+Original logic tick (~34.8 Hz, untouched)
+   │  draws into the 320×200 8-bit framebuffer
+   │  + parallel tag buffer (category and emission of each pixel)
+   │  + per-pixel layer buffer (which layer painted it)
+   │  + the tick's draw list (each blit with object identity)
    ▼
-Apresentação na taxa do monitor (interpolação por alpha entre ticks)
+Presentation at the monitor rate (alpha interpolation between ticks)
    ▼
-Canvas XRGB na grade lógica (CPU)
-   ├── paleta aplicada na conversão 8 bits → XRGB
-   ├── recorte do playfield 264×184 + layout widescreen + painéis
-   ├── passes: névoa → sombras → luz/bloom → VFX/ambiente → HUD
-   └── filtro CRT (opcional, depois do canvas)
+XRGB canvas on the logical grid (CPU)
+   ├── palette applied in the 8-bit → XRGB conversion
+   ├── 264×184 playfield crop + widescreen layout + panels
+   ├── passes: fog → shadows → light/bloom → VFX/ambient → HUD
+   └── CRT filter (optional, after the canvas)
    ▼
-Scaler "sharp bilinear" → janela
+"Sharp bilinear" scaler → window
 ```
 
-Composição na CPU, sem backend GPU próprio: com tudo na grade de 320×200 o custo é pequeno (64 mil pixels/quadro) e a saída é determinística e coberta por hashes. O `SDL_Renderer` só sobe a textura e escala.
+Composition on the CPU, with no GPU backend of its own: with everything on the 320×200 grid the cost is small (64 thousand pixels/frame) and the output is deterministic and covered by hashes. `SDL_Renderer` only uploads the texture and scales.
 
-### 3.3 Dados e instalador
+### 3.3 Data and installer
 
-- **Busca do 2.1:** `--data`, pasta do executável/bundle, `TYRIAN_DIR`, cwd.
-- **Busca do 2000:** `--data`, `TYRIAN2000_DATA`, local do instalador, `tyrian2000/` ao lado do executável, `./tyrian2000`.
-- **Arquivo oficial:** `https://www.camanis.net/tyrian/tyrian2000.zip`, 5.051.363 bytes, SHA-256 `348bc76e73514e452279b8730cf217daf0f70a282f07b6b94af653d87e921667`. Constantes em `installer.h`; manifesto de 79 arquivos em `test/regress-2000/data-manifest.txt` = `installer_manifest.h`.
-- **`installer.[ch]`**: job não bloqueante em thread SDL. Detecta, baixa pelo `curl` do sistema (sem shell, só https), confere tamanho e hash, extrai com `third_party/miniz` (MIT, só inflate), valida pelo manifesto e instala por `rename` atômico (download em `.part`, extração em pasta temporária; falhas não instalam nada). Também instala a partir de zip ou pasta (GOG): dados válidos fora do formato canônico são aceitos e registrados no log. CLI headless: `--install-2000=download|PATH`. Falha de validação: "The downloaded Tyrian 2000 data could not be verified. Please try again or install the data manually."
+- **2.1 lookup:** `--data`, executable/bundle folder, `TYRIAN_DIR`, cwd.
+- **2000 lookup:** `--data`, `TYRIAN2000_DATA`, installer location, `tyrian2000/` beside the executable, `./tyrian2000`.
+- **Official archive:** `https://www.camanis.net/tyrian/tyrian2000.zip`, 5,051,363 bytes, SHA-256 `348bc76e73514e452279b8730cf217daf0f70a282f07b6b94af653d87e921667`. Constants in `installer.h`; 79-file manifest in `test/regress-2000/data-manifest.txt` = `installer_manifest.h`.
+- **`installer.[ch]`**: non-blocking job on an SDL thread. Detects, downloads through the system `curl` (no shell, https only), checks size and hash, extracts with `third_party/miniz` (MIT, inflate only), validates against the manifest and installs by atomic `rename` (download into `.part`, extraction into a temporary folder; failures install nothing). It also installs from a zip or folder (GOG): valid data outside the canonical format is accepted and recorded in the log. Headless CLI: `--install-2000=download|PATH`. Validation failure: "The downloaded Tyrian 2000 data could not be verified. Please try again or install the data manually."
 
-| Plataforma | Local de instalação |
+| Platform | Install location |
 |---|---|
 | Windows | `%APPDATA%\OpenTyrian\data-tyrian2000` |
 | macOS | `~/Library/Application Support/OpenTyrian/data-tyrian2000` |
-| Linux/SteamOS | `$XDG_DATA_HOME` ou `~/.local/share/opentyrian/data-tyrian2000` |
-| Portátil (`opentyrian.cfg` ao lado do exe) | ao lado do exe |
+| Linux/SteamOS | `$XDG_DATA_HOME` or `~/.local/share/opentyrian/data-tyrian2000` |
+| Portable (`opentyrian.cfg` beside the exe) | beside the exe |
 
-### 3.4 Saves e arquivos de usuário
+### 3.4 Saves and user files
 
-- **Raiz do usuário** (Windows `%APPDATA%\OpenTyrian`; macOS/Linux `$XDG_CONFIG_HOME/opentyrian` ou `~/.config/opentyrian`; portátil: ao lado do exe): `opentyrian.cfg`, `tyrian.cfg` (28 bytes: detalhe, gamma, teclas, joystick, volumes), `newsh$.shp` e o log. **Apresentação e controles são compartilhados entre as variantes.**
-- **`tyrian21/`**: `tyrian.sav` (2.502 bytes) e demos gravadas (`demorec.N`). **`tyrian2000/`**: `tyrian.sav` (4.722 bytes = prefixo de 2.502 + placares sem criptografia; um campo de 4 bytes desconhecido é preservado). Uma variante nunca lê o save da outra.
-- **Migração do 2.1** (antes de `loadSaves`, nunca em regress/selftest): copia o `tyrian.sav` da raiz só se tiver exatamente 2.502 bytes, via temporário exclusivo (`link`+`unlink` no POSIX, `rename` no Windows/FAT), sem sobrescrever e sem mexer no original. Se a cópia falhar, a sessão lê o save da raiz só para leitura e não grava nada. Um binário antigo continua no save da raiz e o progresso diverge dos dois lados.
-- No Steam Deck, config e log ficam em `~/.config/opentyrian/`; `--log-file` funciona em qualquer sistema.
+- **User root** (Windows `%APPDATA%\OpenTyrian`; macOS/Linux `$XDG_CONFIG_HOME/opentyrian` or `~/.config/opentyrian`; portable: beside the exe): `opentyrian.cfg`, `tyrian.cfg` (28 bytes: detail, gamma, keys, joystick, volumes), `newsh$.shp` and the log. **Presentation and controls are shared between the variants.**
+- **`tyrian21/`**: `tyrian.sav` (2,502 bytes) and recorded demos (`demorec.N`). **`tyrian2000/`**: `tyrian.sav` (4,722 bytes = 2,502 prefix + unencrypted high scores; an unknown 4-byte field is preserved). One variant never reads the other's save.
+- **2.1 migration** (before `loadSaves`, never in regress/selftest): copies the root `tyrian.sav` only if it is exactly 2,502 bytes, via an exclusive temporary (`link`+`unlink` on POSIX, `rename` on Windows/FAT), without overwriting and without touching the original. If the copy fails, the session reads the root save read-only and writes nothing. An old binary keeps using the root save and progress diverges on the two sides.
+- On the Steam Deck, config and log live in `~/.config/opentyrian/`; `--log-file` works on any system.
 
 ### 3.5 Launcher
 
-- Abre em **todo** início normal (inclusive no Steam Deck); `--variant=2.1|2000`, regress e selftest o pulam. `launcher/last_variant` em `opentyrian.cfg` só pré-seleciona o painel.
-- Dois painéis (2.1 azul, 2000 laranja) com arte embutida no binário (`tools/embed_assets.sh` → `obj/launcher_art.c`; VS: `visualc/embed_assets.ps1`), desenhados no tamanho físico da janela, legíveis em 1280×800. Texto em fonte de debug do SDL em escala inteira. Texto lista só o que existe (não há arena).
-- Controles: `←/→` escolhe, `Enter/A` confirma, `Esc/B` sai; teclado, mouse e gamepad. Mostra se os dados do 2000 estão instalados; quando faltam, o botão vira **INSTALL**, que dirige o instalador (com tela "coloque os arquivos" quando não há seletor de arquivos: Game Mode do Deck, `OPENTYRIAN_NO_DIALOGS`).
-- Se o compositor ignora o resize (gamescope), o launcher desenha no tamanho que a janela tem e segue os eventos de resize; nunca encerra o jogo por isso.
-- Identificação da variante: "TYRIAN 2.1"/"TYRIAN 2000" discreto no menu, pausa e About; o log de início traz `Game Variant`, `Data Path` e `Data Validation: OK|FAILED`.
+- Opens on **every** normal start (including on the Steam Deck); `--variant=2.1|2000`, regress and selftest skip it. `launcher/last_variant` in `opentyrian.cfg` only preselects the panel.
+- Two panels (2.1 blue, 2000 orange) with art embedded in the binary (`tools/embed_assets.sh` → `obj/launcher_art.c`; VS: `visualc/embed_assets.ps1`), drawn at the physical size of the window, legible at 1280×800. Text in the SDL debug font at integer scale. Text lists only what exists (there is no arena).
+- Controls: `←/→` chooses, `Enter/A` confirms, `Esc/B` exits; keyboard, mouse and gamepad. It shows whether the 2000 data is installed; when it is missing, the button becomes **INSTALL**, which drives the installer (with a "place the files" screen when there is no file picker: Deck Game Mode, `OPENTYRIAN_NO_DIALOGS`).
+- If the compositor ignores the resize (gamescope), the launcher draws at the size the window has and follows the resize events; it never quits the game over this.
+- Variant identification: a discreet "TYRIAN 2.1"/"TYRIAN 2000" in the menu, pause and About; the startup log carries `Game Variant`, `Data Path` and `Data Validation: OK|FAILED`.
 
-### 3.6 Notas técnicas do código (fatos que guiam mudanças)
+### 3.6 Technical notes on the code (facts that guide changes)
 
-- Renderização 100% em software, 8 bits indexado, 320×200; paleta em 16 matizes × 16 brilhos, blends e filtros operam nesses nibbles.
-- Lógica a ~34,8 Hz (`frameCountMax = 2`); `getFrameCount2Ticks()` é acumulador de fase (aviso em `fonthand.c`, respawn em `mainint.c`) e precisa ser preservado por qualquer mudança de ritmo.
-- Playfield visível 264×184 (offset +24); dinheiro, vidas e superbombs são desenhados dentro dele. `JE_inGameDisplays` escreve em `tempW` (lido pelo pan) e `draw_boss_bar` atualiza `boss_bar[]` ao desenhar: desenho e lógica não são separáveis sem cuidado.
-- `JE_drawEnemy` só anima e desenha inimigos em x ∈ (-29,300). `blit_sprite2*` usam o pitch da superfície de destino. `draw_background_2/3` avançam o scroll dentro da função de desenho e não podem ser chamadas duas vezes por quadro.
-- Os smoothies (lava, água, blur, iced blur, holofote, flip) ligam por eventos de fase (tipo 64); só a execução confirma quais rodam (`tools/scan_smoothies.py` lista candidatos). `lvlPos` tem duas entradas por fase.
-- Áudio: mono S16 44100 Hz, buffer de 1024; música = Nuked OPL3 (modo OPL2, 49716 Hz) + player LDS; efeitos 8 bits a 11025 Hz convertidos por sinc polifásico (Kaiser) próprio em inteiros, idêntico em qualquer plataforma. Sem `rand()` da libc no áudio.
-- Rede: UDP ponto a ponto, 2 jogadores, em lock-step; `network_read16/write16` em `src/network.h`; SDL3_net sem bind, filtro por endereço/porta do oponente explícito. O lock-step em jogo nunca foi exercitado; só o handshake. O fork do 2000 também não tem arena nem rede testada.
-- SDL3: `SDL_EVENT_GAMEPAD_ADDED/REMOVED` chegam mesmo com eventos desabilitados, mas `SDL_EVENT_JOYSTICK_*` não; um gamepad gera os dois pares, deduplicar por instance id.
-- Dados do teste: o zip oficial do `get_data.sh` é a referência (`newsh9.shp` de 38.831 bytes); uma cópia local diferente diverge no quadro 855 do cenário `flip`.
+- 100% software rendering, 8-bit indexed, 320×200; palette in 16 hues × 16 brightnesses, blends and filters operate on those nibbles.
+- Logic at ~34.8 Hz (`frameCountMax = 2`); `getFrameCount2Ticks()` is a phase accumulator (warning in `fonthand.c`, respawn in `mainint.c`) and must be preserved by any change of pacing.
+- Visible playfield 264×184 (offset +24); money, lives and superbombs are drawn inside it. `JE_inGameDisplays` writes to `tempW` (read by the pan) and `draw_boss_bar` updates `boss_bar[]` while drawing: drawing and logic cannot be separated without care.
+- `JE_drawEnemy` only animates and draws enemies at x ∈ (-29,300). `blit_sprite2*` use the pitch of the destination surface. `draw_background_2/3` advance the scroll inside the drawing function and cannot be called twice per frame.
+- The smoothies (lava, water, blur, iced blur, spotlight, flip) are turned on by level events (type 64); only execution confirms which ones run (`tools/scan_smoothies.py` lists candidates). `lvlPos` has two entries per level.
+- Audio: mono S16 44100 Hz, buffer of 1024; music = Nuked OPL3 (OPL2 mode, 49716 Hz) + LDS player; 8-bit effects at 11025 Hz converted by our own integer polyphase (Kaiser) sinc, identical on any platform. No libc `rand()` in the audio.
+- Network: point-to-point UDP, 2 players, lock-step; `network_read16/write16` in `src/network.h`; SDL3_net without bind, explicit filter by opponent address/port. In-game lock-step has never been exercised; only the handshake. The 2000 fork also has no arena nor tested networking.
+- SDL3: `SDL_EVENT_GAMEPAD_ADDED/REMOVED` arrive even with events disabled, but `SDL_EVENT_JOYSTICK_*` do not; a gamepad generates both pairs, deduplicate by instance id.
+- Test data: the official zip from `get_data.sh` is the reference (`newsh9.shp` of 38,831 bytes); a different local copy diverges at frame 855 of the `flip` scenario.
 
 ---
 
-## 4. Apresentação: Classic e Modern
+## 4. Presentation: Classic and Modern
 
 ### 4.1 Classic
-O caminho original. Mantém detalhe escolhido pelo jogador (`tyrian.cfg`; instalação nova começa em Pentium), os scalers de software foram removidos (quadro convertido em 1× e escalado pela GPU). Estrelas a 25 % da velocidade original (`--starfield-speed=PERCENT`, 10–100, chave `starfield_speed_percent`; `100` devolve o ritmo upstream). Fit usa o mesmo caminho "sharp bilinear" do Modern, e a janela usa múltiplos inteiros.
+The original path. Keeps the detail chosen by the player (`tyrian.cfg`; a new installation starts at Pentium), the software scalers were removed (frame converted at 1× and scaled by the GPU). Stars at 25 % of the original speed (`--starfield-speed=PERCENT`, 10–100, key `starfield_speed_percent`; `100` restores the upstream pace). Fit uses the same "sharp bilinear" path as Modern, and the window uses integer multiples.
 
-### 4.2 Opções do Modern (Setup → Graphics)
+### 4.2 Modern options (Setup → Graphics)
 
-Opções valem na hora e ficam esmaecidas no Classic.
+Options take effect immediately and are greyed out in Classic.
 
-| Opção | Valores | Padrão | Config / CLI |
+| Option | Values | Default | Config / CLI |
 |---|---|---|---|
 | Presentation | Classic, Modern | Classic (Deck: Modern) | `presentation`, `--presentation=` |
 | Aspect | 4:3, 16:10, 16:9, 21:9, 32:9, auto | 4:3 (Deck: auto) | `aspect`, `--aspect=` |
 | Smooth Motion | on/off | on | `smooth_motion`, `--smooth-motion=` |
 | CRT Filter | Off, Scanlines, NTSC, Scanl + NTSC | Off | `crt_filter` |
-| Lighting (bloom + luz) | Off, Low, High | Low | `lighting`, `--lighting=` (`bloom` é alias lido) |
-| Depth | Off, On | On | `modern_depth` (`low`/`high` legados leem On) |
-| Effects (VFX e ambiente) | Off, Low, High | Low | `vfx`, `--vfx=` |
+| Lighting (bloom + light) | Off, Low, High | Low | `lighting`, `--lighting=` (`bloom` is a read alias) |
+| Depth | Off, On | On | `modern_depth` (legacy `low`/`high` read as On) |
+| Effects (VFX and ambient) | Off, Low, High | Low | `vfx`, `--vfx=` |
 
-`Pixel Aspect` (`pixel_aspect`, `--pixel-aspect=`) existe em config/CLI mas está escondido no menu: o Modern usa sempre o original (1,2). O nível de detalhe é **fixo em Pentium** no Modern (SuperWild com a trapaça) e some do menu; as flags de detalhe são só visuais. O Modern abre janela no formato escolhido, a ~80 % da área útil.
+`Pixel Aspect` (`pixel_aspect`, `--pixel-aspect=`) exists in config/CLI but is hidden in the menu: Modern always uses the original (1.2). The detail level is **fixed at Pentium** in Modern (SuperWild with the cheat) and disappears from the menu; the detail flags are visual only. Modern opens a window in the chosen aspect, at ~80 % of the usable area.
 
-### 4.3 Escala, aspecto e janela
-- Canvas de largura `round(200 × PAR × aspect)`, com o quadro original centralizado; PAR original 1,2. **Sharp bilinear**: pré-escala inteira com nearest num render target em cache e depois passe linear (pixels uniformes, sem linhas de 4 e 5 px que tremem no scroll). Menus, loja e cutscenes (320×200) ficam centralizados com moldura.
-- O mapeamento do mouse leva em conta o deslocamento do quadro e as faixas inseridas.
-- Pendente: `SDL_WINDOW_HIGH_PIXEL_DENSITY` não é pedido (ver §8).
+### 4.3 Scale, aspect and window
+- Canvas of width `round(200 × PAR × aspect)`, with the original frame centered; original PAR 1.2. **Sharp bilinear**: integer pre-scale with nearest into a cached render target and then a linear pass (uniform pixels, no 4 and 5 px lines that shimmer on scroll). Menus, shop and cutscenes (320×200) stay centered with a frame.
+- Mouse mapping accounts for the frame offset and the inserted bands.
+- Pending: `SDL_WINDOW_HIGH_PIXEL_DENSITY` is not requested (see §8).
 
-### 4.4 Widescreen e HUD
-- **Laterais em jogo:** playfield de 264×184 recortado; a barra lateral e a faixa de baixo originais continuam sendo desenhadas no quadro de 8 bits (lógica intacta) mas **não entram no canvas**. O HUD novo ocupa os painéis (`MODERN_HUD_MIN_PANEL_WIDTH` = 51 px; 81/82 px em 16:9, 60 px em 16:10; em 4:3 não há painéis e vale o fallback).
-- **Layout:** armas e sidekicks à esquerda; escudo, armadura e gerador/força à direita, em barras **verticais** com gradiente (78 px no 1P/arcade; no 2P compacto 39/35/29 px conforme 21:9–32:9/16:9/16:10). Colunas do bloco de vitais com no máximo 36 px (`VIT_COL_MAX_W`) alinhadas pela borda externa. Painéis de "vidro" (fundo desfocado 68 %–32 %, sombra de 1 px sob o texto), moldura chanfrada em volta do playfield (filete duplo, glints diferentes por lado com bloom no filete, sombra interna). Tudo na grade lógica e nos hashes.
-- **Conteúdo:** dinheiro, vidas (só arcade e 2P, como no original), nomes de jogador **só no 2P**, superbombs, arma especial, barra de chefe, energia das armas (`PWR`), timer, aviso de trapaça (1–3 linhas), nome da fase e mensagem do jogo na faixa sob o playfield. Vidas/dinheiro em linhas separadas; nomes longos são truncados.
-- **PROGRESS:** barra horizontal contínua com paleta de SHIELD; observador somente de apresentação. Marco estimado pelo maior tempo positivo de ação 11/36, avanço por trecho até 99 %, congelada durante boss reconhecido; saída antecipada pode terminar abaixo de 100 %; 1P/arcade à esquerda (rótulo y=142, barra y=150), 2P na linha de título; omitida sem painéis. Não há identificação universal de boss final nem promessa de porcentagem precisa em todos os níveis/modos (inventário de 62/70 níveis; ver [progress-runtime.md](progress-runtime.md) e [progress-levels.md](progress-levels.md)).
-- **Ultrawide:** painéis de 21:9/32:9 usam as larguras limitadas acima.
-- **Telas segurando o jogo** (pausa P, menu ESC, ajuda F1) mantêm o HUD nas laterais, com "PAUSED" centralizado e o efeito dos passes preservado (ver 4.9).
-- **Quit e diálogos** (inclusive nome de recorde) são centralizados; a sombra fica pendurada como no original, cortada no limite do painel alargado.
+### 4.4 Widescreen and HUD
+- **In-game sides:** 264×184 playfield cropped; the original side bar and bottom strip continue to be drawn into the 8-bit frame (logic intact) but **do not enter the canvas**. The new HUD occupies the panels (`MODERN_HUD_MIN_PANEL_WIDTH` = 51 px; 81/82 px at 16:9, 60 px at 16:10; at 4:3 there are no panels and the fallback applies).
+- **Layout:** weapons and sidekicks on the left; shield, armor and generator/power on the right, in **vertical** gradient bars (78 px in 1P/arcade; in compact 2P 39/35/29 px depending on 21:9–32:9/16:9/16:10). Vitals block columns at most 36 px (`VIT_COL_MAX_W`) aligned by the outer edge. "Glass" panels (blurred background 68 %–32 %, 1 px shadow under the text), beveled frame around the playfield (double fillet, different glints per side with bloom on the fillet, inner shadow). All on the logical grid and in the hashes.
+- **Content:** money, lives (arcade and 2P only, as in the original), player names **only in 2P**, superbombs, special weapon, boss bar, weapon power (`PWR`), timer, cheat warning (1–3 lines), level name and game message in the strip under the playfield. Lives/money on separate lines; long names are truncated.
+- **PROGRESS:** continuous horizontal bar with the SHIELD palette; presentation-only observer. Milestone estimated by the greatest positive time of action 11/36, advancement by stretch up to 99 %, frozen during a recognized boss; an early exit may end below 100 %; 1P/arcade on the left (label y=142, bar y=150), 2P on the title line; omitted without panels. There is no universal identification of a final boss nor a promise of an accurate percentage on all levels/modes (inventory of 62/70 levels; see [progress-runtime.md](progress-runtime.md) and [progress-levels.md](progress-levels.md)).
+- **Ultrawide:** 21:9/32:9 panels use the limited widths above.
+- **Screens holding the game** (pause P, ESC menu, F1 help) keep the HUD on the sides, with a centered "PAUSED" and the effect of the passes preserved (see 4.9).
+- **Quit and dialogs** (including the high-score name) are centered; the shadow hangs over as in the original, cut at the edge of the widened panel.
 
-### 4.5 Telas fora do jogo (widescreen)
-- **Vert-** (fundo ampliado ~1,33× e cortado em cima e embaixo, menus nítidos em 1×): título (pic 4) e menus sobre a pic 2 (seleção de jogo/episódio/dificuldade, setup, ajuda, load/save, recordes).
-- **Painel direito alargado** (pic 1: loja, armamentos, dados, opções, data cubes, teclado, joystick, load/save, Quit, Ship Specs, mapa de navegação): uma faixa de colunas internas do painel é repetida até preencher o canvas; o corte é decidido pelo conteúdo (logo depois do elemento mais à direita, y < 184, com a faixa de baixo à parte); o cabeçalho (y ≤ 33) repete a coluna 310 para não repetir o bisel; o título da caixa não é recentralizado. Nada é redesenhado: o jogo segue desenhando 320 px. O simulador de armas continua na largura original.
-- **Extensão real** no canvas inteiro: jukebox, ship specs e créditos (superfície de 8 bits da largura do canvas, `modern_screen_begin()`), starfields.
-- **Preenchimento sólido** onde a borda é lisa (pic 5, pic 11/Destruct, telas pretas) e **desfoque escurecido da própria tela** como fallback (logos de abertura, imagens da história, animação final).
-- Rótulos de remapeamento longos viram abreviações (`A/RB`, `LY-/UP`, `L Shift`…) para caber em x ≤ 310; glyphs que cruzam a borda são cortados.
+### 4.5 Out-of-game screens (widescreen)
+- **Vert-** (background enlarged ~1.33× and cropped at top and bottom, menus sharp at 1×): title (pic 4) and menus over pic 2 (game/episode/difficulty selection, setup, help, load/save, high scores).
+- **Widened right panel** (pic 1: shop, armaments, data, options, data cubes, keyboard, joystick, load/save, Quit, Ship Specs, navigation map): a strip of inner panel columns is repeated to fill the canvas; the cut is decided by the content (right after the rightmost element, y < 184, with the bottom strip separate); the header (y ≤ 33) repeats column 310 so as not to repeat the bevel; the box title is not recentered. Nothing is redrawn: the game keeps drawing 320 px. The weapon simulator stays at the original width.
+- **Real extension** over the whole canvas: jukebox, ship specs and credits (8-bit surface of the canvas width, `modern_screen_begin()`), starfields.
+- **Solid fill** where the edge is smooth (pic 5, pic 11/Destruct, black screens) and **darkened blur of the screen itself** as a fallback (opening logos, story images, final animation).
+- Long remapping labels become abbreviations (`A/RB`, `LY-/UP`, `L Shift`…) to fit in x ≤ 310; glyphs that cross the edge are clipped.
 
-### 4.6 Taxa de quadros e interpolação
-- Lógica no tick fixo original; o Modern em jogo apresenta na **taxa do monitor** (≥ 60 Hz, com vsync; sem vsync dorme até o refresh) a `alpha = decorrido / período do tick`, via `interp_present_gameplay()` (`src/interp.c`) e a lista de desenho por tick (`src/drawlist.c`).
-- Interpola posições (nave, sidekicks, inimigos inclusive de chão, tiros, explosões que seguem objetos, scroll das três camadas, starfield, superpixels); quadros de animação não são misturados. Casamento por identidade e ordem; snap em nascimento, salto > 64 px e troca de sheet. Linhas de fundo casam pela linha do mapa (`row_key`).
-- Efeitos sobre o quadro interpolado: fades de paleta e barras de escudo/armadura/força/chefe com comprimento interpolado. Ficam por tick: a rampa de brilho de 4 bits do filtro de fase, gauges/pips discretos e textos. Filtros de água/lava/blur/iced são aplicados sobre quadros intermediários; o quadro do tick é exato.
-- Custo ≈ 1 tick (~28 ms) de atraso de imagem; ~1,1 ms por quadro apresentado em 16:9; medido ~120 fps em painel de 120 Hz. Provas: `--regress-replay-check`, `--regress-interp-check`, `--regress-interp-smoothness`, `--regress-smooth-effects-check`, `--regress-gameplay-check`.
+### 4.6 Frame rate and interpolation
+- Logic on the original fixed tick; in-game Modern presents at the **monitor rate** (≥ 60 Hz, with vsync; without vsync it sleeps until refresh) at `alpha = elapsed / tick period`, via `interp_present_gameplay()` (`src/interp.c`) and the per-tick draw list (`src/drawlist.c`).
+- Interpolates positions (ship, sidekicks, enemies including ground ones, shots, explosions that follow objects, scroll of the three layers, starfield, superpixels); animation frames are not blended. Matching by identity and order; snap on birth, jump > 64 px and sheet change. Background lines match by map row (`row_key`).
+- Effects over the interpolated frame: palette fades and shield/armor/power/boss bars with interpolated length. Per tick: the 4-bit brightness ramp of the level filter, discrete gauges/pips and texts. Water/lava/blur/iced filters are applied over intermediate frames; the tick frame is exact.
+- Cost ≈ 1 tick (~28 ms) of image delay; ~1.1 ms per presented frame at 16:9; measured ~120 fps on a 120 Hz panel. Proofs: `--regress-replay-check`, `--regress-interp-check`, `--regress-interp-smoothness`, `--regress-smooth-effects-check`, `--regress-gameplay-check`.
 
-### 4.7 Luz, bloom e VFX
-- **Lighting** (`src/modern_bloom.c`): bloom e mapa de luz dinâmico juntos, só no playfield dos quadros de jogo. A luz parte dos pixels emissivos marcados pelo tag buffer e leva a **cor do objeto** (tom saturado da matiz dominante do sprite). Planos Q8 de 16 bits, limitador suave (joelho 150, assíntota 216). Ganhos atuais: **High 1997, Low 1198** (Low = 0,6× High). Tiros grandes do jogador têm a emissão escalada por `(S_ref/S)^0.75` (pegada emissiva no byte de tag; referência 32 pixels brilhantes), mantendo-os em ~1,4–2,1× o tiro pequeno. Custo < 0,5 ms.
-- **Effects** (`vfx*.c`): faíscas, destroços, fumaça e anéis (blend/darken de nibble do motor), shockwave, trilhas, muzzle flash (centrado no sprite visível) e impactos; Low/High (`medium` é alias de high). **Ambiente** (`vfx_ambient.c`): brasas na lava, neve no gelo, névoa na água e no desfoque, poeira fina no espaço e poeira no resto; só clareiam ou mesclam, não emitem luz, seguem o Effects. VFX e ambiente usam RNG próprio de ordem fixa.
-- Textos desenhados com contexto próprio (`DL_OBJ_HUD`: INSERT COIN, janela de mensagens, rastros no fim da fase) não herdam emissão de tiro.
+### 4.7 Light, bloom and VFX
+- **Lighting** (`src/modern_bloom.c`): bloom and dynamic light map together, only on the playfield of game frames. Light starts from the emissive pixels marked by the tag buffer and carries the **object's color** (saturated tone of the sprite's dominant hue). 16-bit Q8 planes, soft limiter (knee 150, asymptote 216). Current gains: **High 1997, Low 1198** (Low = 0.6× High). Large player shots have their emission scaled by `(S_ref/S)^0.75` (emissive footprint in the tag byte; reference 32 bright pixels), keeping them at ~1.4–2.1× the small shot. Cost < 0.5 ms.
+- **Effects** (`vfx*.c`): sparks, debris, smoke and rings (engine nibble blend/darken), shockwave, trails, muzzle flash (centered on the visible sprite) and impacts; Low/High (`medium` is an alias of high). **Ambient** (`vfx_ambient.c`): embers on lava, snow on ice, mist on water and blur, fine dust in space and dust elsewhere; they only lighten or blend, do not emit light, follow Effects. VFX and ambient use their own fixed-order RNG.
+- Texts drawn with their own context (`DL_OBJ_HUD`: INSERT COIN, message window, trails at the end of the level) do not inherit shot emission.
 
-### 4.8 Profundidade (Depth)
-- **Buffer de camada por pixel** (byte paralelo ao quadro, carimbado pelas mesmas primitivas que carimbam o tag): bg1, bg2 (translúcido ou não), bg3, inimigos por faixa de slot, itens, nave, sidekicks, tiros, explosões, estrelas, superpixels. O quadro de 8 bits e os blends não são alterados. Ordem de desenho por tick (muda por nível).
-- **Sombras projetadas** (`modern_depth.c`; luz fixa do alto à esquerda): cada camada projeta sobre as anteriores e mais baixas, com deslocamento (dx,dy) proporcional à altura: bg2 (4,6), inimigos do céu (8,12), nave/sidekicks (9,14), bg3 (10,15), inimigos do topo (12,18), inimigos de chão (2,2); bg2 translúcido com 31 % do peso. Silhueta deslocada, desfoque separável em ponto fixo, escurecimento 78/256. Tiros, explosões, estrelas, superpixels, texto e pixels de VFX não projetam nem recebem. Fases de espaço (`starActive`) não têm sombra, névoa nem luz por camada. ~0,3 ms/quadro.
-- **Névoa no bg1**: mistura 30/256 (`MD_FOG_STRENGTH_DEFAULT`) em direção a uma cor por quadro (média do bg1, meio dessaturada, ~35 % mais clara); a linha translúcida do bg2 recebe metade; sem ruído animado. **Luz por camada** (Q8, `md_light_q8[]`): terreno e inimigos de chão 256, inimigos do céu e do topo 160, nave e sidekicks 144, bg3 24, tiros/explosões/VFX 256; bloom não é pesado. Ordem dos passes: névoa → sombras → luz. ~0,16 ms adicionais.
-- Com `Depth: Off` a saída é idêntica bit a bit à sem profundidade. A regressão pina Depth em Off (baselines antigos intactos); casos `depth-*` provam Off × On com estado/RNG idênticos.
+### 4.8 Depth
+- **Per-pixel layer buffer** (a byte parallel to the frame, stamped by the same primitives that stamp the tag): bg1, bg2 (translucent or not), bg3, enemies by slot range, items, ship, sidekicks, shots, explosions, stars, superpixels. The 8-bit frame and the blends are not altered. Draw order per tick (changes per level).
+- **Cast shadows** (`modern_depth.c`; fixed light from the top left): each layer casts onto the previous and lower ones, with an offset (dx,dy) proportional to height: bg2 (4,6), sky enemies (8,12), ship/sidekicks (9,14), bg3 (10,15), top enemies (12,18), ground enemies (2,2); translucent bg2 with 31 % of the weight. Displaced silhouette, separable fixed-point blur, darkening 78/256. Shots, explosions, stars, superpixels, text and VFX pixels neither cast nor receive. Space levels (`starActive`) have no shadow, fog or per-layer light. ~0.3 ms/frame.
+- **Fog on bg1**: 30/256 mix (`MD_FOG_STRENGTH_DEFAULT`) toward a per-frame color (average of bg1, half desaturated, ~35 % lighter); the translucent line of bg2 gets half; no animated noise. **Per-layer light** (Q8, `md_light_q8[]`): terrain and ground enemies 256, sky and top enemies 160, ship and sidekicks 144, bg3 24, shots/explosions/VFX 256; bloom is not weighted. Pass order: fog → shadows → light. ~0.16 ms additional.
+- With `Depth: Off` the output is bit-for-bit identical to the one without depth. Regression pins Depth at Off (old baselines intact); `depth-*` cases prove Off × On with identical state/RNG.
 
-### 4.9 Telas seguradas (pausa, menu ESC, ajuda)
-`src/modern_held.[ch]`: apresentam o playfield congelado reutilizando a camada, o tag, o ranking e as cores de luz do último quadro realmente apresentado, menos uma máscara de overlay (pixels que diferem do snapshot não recebem sombra, luz nem emissão). `--regress-held-check` compara o quadro seguro com o último vivo fora do overlay.
+### 4.9 Held screens (pause, ESC menu, help)
+`src/modern_held.[ch]`: they present the frozen playfield by reusing the layer, tag, ranking and light colors of the last really presented frame, minus an overlay mask (pixels that differ from the snapshot receive no shadow, light or emission). `--regress-held-check` compares the held frame with the last live one outside the overlay.
 
-### 4.10 Filtro CRT
-Só no Modern, depois dos passes e da captura do canvas em `modern_present_frame` (inclusive quadros interpolados e modais); o launcher não passa por ele. **Scanlines** (bandas de meia linha lógica, luminância limitada a 216, altura `2×src` só quando `dst % (2×src) == 0`, senão altura nativa do Fit; abaixo de `2×src` mantém `src`) e **NTSC** (kernel escalar do `snes_ntsc 0.2.2`, Shay Green, LGPL 2.1+; composite, três fases de burst; tabela de ~16 MiB criada na primeira ativação e liberada no shutdown; a largura de saída acompanha o NTSC). Sem curvatura nem máscara. Buffer e textura só são recriados quando as dimensões mudam; read-only sobre o canvas, com o retângulo Fit e o mapa de mouse originais. Custo (A18 Pro, canvas 427×200, 1080/2160 linhas): Scanlines 0,38/0,49 ms, NTSC 0,31/0,31 ms, combinado 0,85/1,33 ms. Detalhes em [CRT.md](CRT.md).
+### 4.10 CRT filter
+Modern only, after the passes and the canvas capture in `modern_present_frame` (including interpolated frames and modals); the launcher does not go through it. **Scanlines** (half-logical-line bands, luminance limited to 216, height `2×src` only when `dst % (2×src) == 0`, otherwise native Fit height; below `2×src` it keeps `src`) and **NTSC** (scalar kernel of `snes_ntsc 0.2.2`, Shay Green, LGPL 2.1+; composite, three burst phases; ~16 MiB table created on first activation and freed at shutdown; the output width follows NTSC). No curvature or mask. Buffer and texture are only recreated when the dimensions change; read-only over the canvas, with the original Fit rectangle and mouse map. Cost (A18 Pro, 427×200 canvas, 1080/2160 lines): Scanlines 0.38/0.49 ms, NTSC 0.31/0.31 ms, combined 0.85/1.33 ms. Details in [CRT.md](CRT.md).
 
-### 4.11 Controle, gamepad e Steam Deck
-- **Gamepad** pela API do SDL3 com mapeamento padrão, hot-plug e remapeamento por nome no config; botões padrão estilo Xbox/Deck, todos remapeáveis e persistidos (`--selftest-gamepad` com gamepad virtual). Telas de remapeamento cabem dois mapeamentos por ação.
-- **Analógico (só Modern):** zona morta radial de 0–20 % (padrão 10 %, por controle, `--deadzone`); curva linear até 75 % de input com velocidade crescente até os 8 px/tick originais; acima disso, máximo. O alvo de momento é projetado por eixo e o stick a até 5° de um eixo encaixa nele (D-pad e ruído de repouso não geram movimento diagonal); abaixo do passo máximo só passo sub-pixel. Stick todo inclinado = trajetória do analógico original; a rede segue consistente (accel transmitido ±1). Diagonal radial máx. 9,7 px/tick (o analógico antigo chegava a 11,3). Classic não muda.
-- **Steam Deck:** detecção (`SteamDeck=1` ou placa Jupiter/Galileo); primeira execução em tela cheia, Modern, aspecto auto (16:10 em 1280×800). Pacote Linux `.tar.gz` com binário estático em SDL3/SDL3_net (só glibc/libm; roda em SteamOS 3.5+); HIDAPI/libusb no SDL3 estático; leva os dados do Tyrian 2.1 freeware (nunca o 2000). Guia em [STEAM_DECK.md](STEAM_DECK.md). Validado num Deck físico: launcher em Game Mode e o analógico corrigido.
+### 4.11 Control, gamepad and Steam Deck
+- **Gamepad** through the SDL3 API with standard mapping, hot-plug and remapping by name in the config; Xbox/Deck-style default buttons, all remappable and persisted (`--selftest-gamepad` with a virtual gamepad). Remapping screens fit two mappings per action.
+- **Analog (Modern only):** radial dead zone of 0–20 % (default 10 %, per controller, `--deadzone`); linear curve up to 75 % of input with speed increasing up to the original 8 px/tick; above that, maximum. The momentum target is projected per axis and a stick within 5° of an axis snaps to it (D-pad and resting noise do not generate diagonal movement); below the maximum step only a sub-pixel step. Stick fully tilted = trajectory of the original analog; the network stays consistent (accel transmitted ±1). Radial diagonal max 9.7 px/tick (the old analog reached 11.3). Classic does not change.
+- **Steam Deck:** detection (`SteamDeck=1` or Jupiter/Galileo board); first run in fullscreen, Modern, aspect auto (16:10 at 1280×800). Linux `.tar.gz` package with a static binary on SDL3/SDL3_net (only glibc/libm; runs on SteamOS 3.5+); HIDAPI/libusb in static SDL3; ships the Tyrian 2.1 freeware data (never 2000). Guide in [STEAM_DECK.md](STEAM_DECK.md). Validated on a physical Deck: launcher in Game Mode and the corrected analog.
 
-### 4.12 Áudio
-Nuked OPL3 (modo OPL2, 49716 Hz, integer-only, LFSR de ruído próprio) convertido a 44,1 kHz por resampler polifásico contínuo; efeitos por sinc Kaiser em inteiros (plano até 4,98 kHz, rejeição > 90 dB). Não serão feitos: estéreo posicional, limitador suave, trilha OGG do usuário.
+### 4.12 Audio
+Nuked OPL3 (OPL2 mode, 49716 Hz, integer-only, own noise LFSR) converted to 44.1 kHz by a continuous polyphase resampler; effects by integer Kaiser sinc (flat up to 4.98 kHz, rejection > 90 dB). Will not be done: positional stereo, soft limiter, user OGG soundtrack.
 
-### 4.13 Modo Natal e demais
-`--xmas`/`--no-xmas` (fork do 2000, comum às duas variantes). As demos de atração seguem o HUD do modo ativo.
+### 4.13 Christmas mode and others
+`--xmas`/`--no-xmas` (2000 fork, common to both variants). The attract demos follow the active mode's HUD.
 
-### 4.14 Bike (FTMS), núcleo
-Projeto em `doc/ftms/design.md`. Tudo é opcional e **desligado por padrão**: com o interruptor mestre (`[ftms] enabled`) desligado, ou sem fonte de dados, o jogo é idêntico ao stock e os 207 baselines não mudam.
-- **Módulos:** `bike_effort` (motor de esforço em ponto fixo Q16.16, sem `float`), `bike_feed` (feeds CSV e `const:W[,RPM]`), `bike` (settings, fonte, portão, tick por quadro), `bike_rules` (mapeamento C: `renda = clamp(G·(bias + gain·n), F, G·cap)` com acumulador de resto exato, e mistura de volta ao `powerAdd` stock após 1,5 s sem link, a 1/2 por segundo; nunca zera).
-- **Portão** (`bike_gate_open`): mestre ligado, dentro de uma fase, e não 2P, não `onePlayerAction`, não rede, não demo (tocar/gravar), não galaga, não `constantPlay`. O gerador ainda exige fonte e ao menos uma amostra.
-- **Ganchos no jogo:** `bike_frame_tick()` uma vez por passagem de `level_loop`; o reabastecimento da barra de energia usa `bike_rules_power_add(powerAdd)` só quando o gerador da bike está ativo; `bike_service()` em `handleSdlEvents()` (ainda sem transporte).
-- **Configuração:** seção `[ftms]` do `opentyrian.cfg` (não grava nada se tudo estiver no padrão); CLI `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W`, `--ftms-off`; regress fixa tudo desligado (`--regress-bike-feed`, `--regress-bike-set`, `--regress-bike-log`).
-- **Estado dos hashes:** `power`, `lastPower` e o digest da bike só entram no hash de estado quando há feed ou o mestre está fixado ligado.
-- **Testes:** `tools/check_bike.sh` (`make regress-bike`; no quick só o subconjunto flag-off, tudo-desligado e determinismo a 150 W), com digests em `test/bike/regress.txt`.
-- **Efeitos de surge (T3.1):** cada um é um toggle próprio sob o mestre, só com o portão aberto e fonte ativa; `surge_superbomb` vem ligado, os outros desligados. Todos em inteiros, em `bike_rules`.
-  - `surge_superbomb`: +1 `player[0].superbombs` a cada evento overdrive-ready (teto 10, como o pickup de `mainint.c`). Em surge sustentado o evento sai a cada ~5,3 s, então o teto é o limite real.
-  - `surge_sidekick`: o reinício de `charge_ticks` cai de 20 para 10 enquanto em surge (carga 2x mais rápida; `mainint.c`).
-  - `surge_special`: um decremento extra de `specialWait` por quadro em surge (`varz.c`).
-  - `surge_shield`: o intervalo de regen do escudo vai de 15 para `15 - round(7·n)` quadros (n = esforço normalizado, 8 no máximo) em surge; o custo `shieldT` por ponto não muda, então nunca fica pior que o stock (`tyrian2.c`).
-- **Auto-fire (T3b.1), `src/bike_controls.[ch]`:** a opção `autofire = off|toggle` só decide se o recurso existe; o liga/desliga é durante o jogo, com um aperto, sem menu.
-  - **Entradas** (tabela pequena no topo de `bike_controls.c`, fácil de trocar depois da sonda T3b.0; nenhuma é slot de `keySettings`): `autofire_key` (padrão `A`) e `autofire_key2` (padrão `Application`, a tecla Menu do controle remoto), mais o clique do analógico direito do gamepad. O clique direito do mouse não é usado: é ação configurável do jogo e pertence ao T3b.2. Flanco de subida inverte o trinco; flancos com o portão fechado são ignorados.
-  - **Estado:** o trinco começa desligado a cada execução e **sobrevive entre fases** (decisão do design §6); desligar a opção `autofire` o zera. Fora do portão (rede, demo, 2P, arcade) nada acontece.
-  - **Gancho:** `mainint.c`, depois do bloco de teclado e antes do empacotamento de rede: `button[0] = true` se o trinco está ligado e `power >= reserva·9` (reserva = Off/25 %/50 % de 900). O fogo manual entra antes (OR) e ignora a reserva. Sem histerese: o tiro passa a ser limitado pela renda no nível da reserva. 25 % = 225 > maior `shieldT` stock (180), então o escudo continua regenerando.
-  - **HUD:** `bike_autofire_active()` e `bike_autofire_held_back()` (também em `BikeHud.autofire_on/held`).
-- **Regress:** `--regress-bike-events=FILE` (id 443; linhas `tick,ação[,arg]`): `autofire_toggle|autofire_on|autofire_off`, `set,K=V`, `fire_on|fire_off` (fogo manual injetado), e só para teste `immortal` e `equip,special=N|sidekicks=L/R|shield=N`. `check_bike.sh` ganhou os casos de surge (cada efeito ligado contra todos desligados), auto-fire ligado/desligado no meio da fase, reserva sob renda baixa e fogo manual ignorando a reserva; linhas de cobertura `Bike effects:`, `Bike autofire:` e `Bike end state:`. Os casos antigos fixam `surge_superbomb=0` (o padrão é ligado), então seus digests não mudaram; o digest de estado só inclui o trinco depois de ele ser usado.
-- **Mouse aéreo e botões do controle remoto (T3b.2), `bike_controls.[ch]`:** a direção em jogo vale com `master && air_mouse` (`bike_controls_air_play()`) e a tradução dos botões nos menus com `master && remote_buttons` (`bike_controls_remote()`), cada uma independente da outra; `--ftms-off` desliga as duas (`bike_master_on()`). Com qualquer condição desligada o caminho é o stock, byte a byte.
-  - **Direção em jogo** (só com o portão aberto, 1P): `mainint.c` força `inputDevice = 0` para o jogador 1 (o padrão de `config.c` é teclado + mouse e o mouse do 1P ficaria morto). O movimento relativo é multiplicado por `pointer_sensitivity` (25–400 %, 100 % = stock, restos carregados em inteiros) antes do clamp de ±30. O modo relativo já é ligado no início da fase (`tyrian2.c`); nada mudou aí. **Suavização One-Euro não foi portada** (a chave `pointer_smoothing` foi removida; configs antigas ainda carregam): a sensibilidade basta e o filtro pediria estado extra no contrato de determinismo.
-  - **Em jogo:** OK (clique esquerdo) mantém o tiro; Voltar (clique direito) abre o menu do jogo (como Esc; escolhido em vez de pausa porque é o único caminho para sair da fase), com rearme: só dispara depois de ver o botão solto, então o clique que fecha o menu não o reabre; o botão do meio mantém a ação stock. Mídia: Play/Pause pausa (mesma regra de rearme), Próxima troca o modo do tiro traseiro, Anterior dispara os dois sidekicks (segurados, como uma tecla). A tecla Menu (`Application`) continua só no auto-fire (`autofire_key2`); o mouse aéreo não a trata, então não há tratamento duplo. A linha "Remote Buttons" do menu liga `remote_buttons` (T5.1); configs antigas com `air_mouse` ligado e sem a chave carregam com ela ligada.
-  - **Menus e telas** (`keyboard.c`, só a tradução de botões): OK vira Enter e Voltar vira Esc, agindo na linha focada e não na posição do ponteiro; os outros botões são descartados e o movimento do ponteiro não muda o foco nem mostra o ponteiro. Isso corrige de uma vez o Voltar da loja e do cubo de dados, o botão direito no Sim do pedido de saída e as telas que reagiam a qualquer botão. Ajustes pontuais: o título abre o pedido de saída em vez de sair (`tyrian2.c`); o pedido de saída começa em Não; os nomes (recorde e arquivo de save) vêm preenchidos com `PILOT`, então Enter aceita; o lançador (`launcher.c`) age no foco, Voltar sai de um diálogo sem fechar o app.
-  - **Bug real corrigido sem condição:** `opentyr.c`, teste de clique do seletor comparava `mouseInput.y` com um limite em x; agora `mouseInput.x < xMenuItemValue + wMenuItemValue`. O regress não entrega eventos de mouse, então nenhum baseline mudou.
-  - **Regress:** `--regress-bike-events` ganhou `mouse_move,dx,dy` (uma vez), `mouse_drive,dx,dy` (por quadro até mudar), `mouse_down|mouse_up,l|r|m` e `key_down|key_up,play_pause|next|prev`. `check_bike.sh` cobre: direção determinística com 50/100/200 %, botões e mídia, menu do jogo e pausa (tick 498 = último de uma corrida de 600 quadros) e, em cada um, `air_mouse` ou mestre desligado = stock. Linha de cobertura `Bike air:`; `Bike end state:` ganhou `x=`/`y=`. A tradução de botões dos menus não tem caso próprio: o regress descarta todo evento SDL. Auditoria e estado das correções em `doc/ftms/remote-navigation-audit.md`.
-- **Controles por toque (T3b.3), `src/bike_touch.[ch]`:** tudo só com `master && touch` e portão aberto (1P em fase; nunca 2P, rede ou demo); com qualquer um desligado o caminho é o stock, byte a byte. Ganchos mínimos: `bike_touch_filter()` no começo do laço de `handleSdlEvents` (`keyboard.c`), `bike_touch_input()` depois do bloco de mouse aéreo em `mainint.c` e `bike_touch_frame()` em `bike_controls_frame()`.
-  - **Arrastar para dirigir:** o primeiro dedo que toca o campo de jogo move a nave pelo seu deslocamento (posição absoluta mapeada por `mapWindowPointToScreen`, então não há erro acumulado; sem manche virtual). O delta, multiplicado por `pointer_sensitivity` (a mesma configuração do mouse aéreo, 25–400 %, restos carregados em inteiros), soma-se a `mouseXC/YC`; o clamp de ±30 e a inércia stock continuam valendo (no máximo 30 por quadro, o excedente fica numa fila de até 120). Ganho 1: um dedo que anda 26 px move a nave ~18 px a 100 %.
-  - **Cliques sintetizados:** o SDL3 transforma toque em mouse (`which == SDL_TOUCH_MOUSEID`). Fora de jogo isso é mantido (toques em menus funcionam como cliques, inclusive com `air_mouse` ligado: o toque nunca passa pela tradução OK/Voltar). Em jogo, o mouse sintetizado de um dedo que começou em jogo é descartado até o próximo toque, para não contar duas vezes nem atirar por clique. "Em jogo" = a última passagem do `level_loop` foi há menos de 250 ms e nenhuma zona abriu menu ou pausa, então toques na pausa e no menu do jogo são stock.
-  - **Zonas de toque** nas faixas laterais, em bandas horizontais (sem manche): **esquerda** REAR (modo do tiro traseiro), SK-L, SK-R (sidekicks, segurados enquanto o dedo estiver na zona, no mínimo 4 quadros); **direita** BOMB (os dois sidekicks juntos, que é o gatilho stock da superbomba), AUTO (liga/desliga o auto-fire, sem efeito com a opção Off), MENU (menu do jogo) e PAUSE. **Dois dedos** no campo, rápidos (até 400 ms) e parados (até 10 px), abrem o menu do jogo. Não há zona de tiro: o auto-fire é o companheiro esperado.
-  - **Geometria:** as zonas são as duas faixas laterais do quadro. No Modern widescreen são os painéis (`modern_side_panel_width()`; o mouse mapeia o campo em coordenadas locais 0..263, painéis fora disso). No Classic e no Modern 4:3 são a margem de 24 px e a barra de 32 px do quadro de 320, pequenas mas usáveis; as barras pretas do letterbox não são zonas. O Modern desenha pontilhado e rótulos das zonas nos painéis (`hud_draw_touch_zones`, só apresentação, só com toque ligado em jogo); o Classic não desenha nada para continuar byte a byte.
-  - **Dica do auto-fire:** com Touch ligado e Auto-fire Off, a linha de ajuda do menu diz "Touch fires via Auto-fire: set it to Toggle." e o rótulo AUTO do HUD aparece apagado.
-  - **Regress:** `--regress-bike-events` ganhou `finger_down|finger_move,id,x,y` e `finger_up,id` (x, y em milésimos da janela; o relógio dos dois dedos usa 14 ms por tick) e `equip,rear=N`; linha de cobertura `Bike touch:`. `check_bike.sh` cobre direção determinística com 50/100/200 %, cada zona, dois dedos rápido contra lento, e em todos toque ou mestre desligado = stock, mais o HUD com zonas (`snap-hud-touch`, estado idêntico ao do HUD sem toque). Os 207 baselines e os digests antigos não mudaram. A verificação em hardware (Surface) está em `doc/ftms/controls-probe.md`.
-- **Menu "Bike and Controls"** (`src/bike_menu.[ch]`, T2.5): Setup ganha a linha "Bike and Controls..." (`SETUP_MENU_BIKE`); a lista rola (a Graphics está cheia) e tem Mestre, Bike Power, Bridge (caixa de texto host:port, padrão 127.0.0.1:8787), FTP (50 a 500 W, passo 5), Strength, Floor, os quatro surges, Auto-fire (Off/Toggle), Auto-fire Reserve (Off/25%/50%), Air Mouse, Pointer Speed, Touch Controls e Bike HUD. A linha de estado fixa mostra o link (Off, Connecting, Connected, Streaming), watts, rpm e idade da última amostra. Setas, Enter e Esc bastam (mouse também); esquerda/direita aceleram enquanto a tecla é mantida. Cada mudança grava em `bike_settings` na hora (nada é guardado em cache), vale no próximo quadro e é salva com a configuração. Os recursos ainda não implementados (surges, auto-fire, mouse aéreo, toque) já persistem o valor. O jogo em si mostra "Bike and Controls" no menu do jogo (ESC) quando o mestre está ligado (ou depois de abrir o menu uma vez na sessão), nunca em jogo em rede; com o mestre desligado esse menu fica idêntico ao stock.
-- **HUD** (T2.6): só quando mestre e "Bike HUD" estão ligados e o portão está aberto (`bike_hud_visible()`). Modern: no painel de status, acima do nome do gerador, ponto de link (verde streaming, amarelo conectado, laranja conectando, vermelho link perdido, cinza desligado), watts e rpm, barra de esforço, medidor de surge e linha AUTO/HOLD/SURGE (AUTO lê `bike_autofire_state()`, hoje um stub que devolve falso até o T3b.1). Classic e Modern 4:3: apenas ponto de link e watts, acima das superbombas. Só leitura de `bike_hud()`: nunca escreve estado, configurações nem RNG; `tools/check_bike.sh` prova que o HUD ligado não muda o hash de estado.
+### 4.14 Bike (FTMS), core
+Design in `doc/ftms/design.md`. Everything is optional and **off by default**: with the master switch (`[ftms] enabled`) off, or without a data source, the game is identical to stock and the 207 baselines do not change.
+- **Modules:** `bike_effort` (effort engine in Q16.16 fixed point, no `float`), `bike_feed` (CSV feeds and `const:W[,RPM]`), `bike` (settings, source, gate, per-frame tick), `bike_rules` (C mapping: `income = clamp(G·(bias + gain·n), F, G·cap)` with an exact remainder accumulator, and blending back to stock `powerAdd` after 1.5 s without a link, at 1/2 per second; it never zeroes).
+- **Gate** (`bike_gate_open`): master on, inside a level, and not 2P, not `onePlayerAction`, not network, not demo (play/record), not galaga, not `constantPlay`. The generator still requires a source and at least one sample.
+- **Hooks in the game:** `bike_frame_tick()` once per pass of `level_loop`; the energy bar refill uses `bike_rules_power_add(powerAdd)` only when the bike generator is active; `bike_service()` in `handleSdlEvents()` (still without transport).
+- **Configuration:** `[ftms]` section of `opentyrian.cfg` (writes nothing if everything is at default); CLI `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W`, `--ftms-off`; regress pins everything off (`--regress-bike-feed`, `--regress-bike-set`, `--regress-bike-log`).
+- **Hash state:** `power`, `lastPower` and the bike digest only enter the state hash when there is a feed or the master is pinned on.
+- **Tests:** `tools/check_bike.sh` (`make regress-bike`; in quick only the flag-off subset, all-off and determinism at 150 W), with digests in `test/bike/regress.txt`.
+- **Surge effects (T3.1):** each is its own toggle under the master, only with the gate open and an active source; `surge_superbomb` comes on, the others off. All in integers, in `bike_rules`.
+  - `surge_superbomb`: +1 `player[0].superbombs` on each overdrive-ready event (cap 10, like the pickup in `mainint.c`). In sustained surge the event fires every ~5.3 s, so the cap is the real limit.
+  - `surge_sidekick`: the `charge_ticks` restart drops from 20 to 10 while in surge (2x faster charge; `mainint.c`).
+  - `surge_special`: one extra `specialWait` decrement per frame in surge (`varz.c`).
+  - `surge_shield`: the shield regen interval goes from 15 to `15 - round(7·n)` frames (n = normalized effort, 8 at most) in surge; the `shieldT` cost per point does not change, so it is never worse than stock (`tyrian2.c`).
+- **Auto-fire (T3b.1), `src/bike_controls.[ch]`:** the `autofire = off|toggle` option only decides whether the feature exists; turning it on/off is during play, with one press, no menu.
+  - **Inputs** (small table at the top of `bike_controls.c`, easy to change after the T3b.0 probe; none is a `keySettings` slot): `autofire_key` (default `A`) and `autofire_key2` (default `Application`, the Menu key of the remote), plus the right analog stick click of the gamepad. The right mouse click is not used: it is a configurable game action and belongs to T3b.2. A rising edge flips the latch; edges with the gate closed are ignored.
+  - **State:** the latch starts off on each run and **survives between levels** (design decision §6); turning off the `autofire` option zeroes it. Outside the gate (network, demo, 2P, arcade) nothing happens.
+  - **Hook:** `mainint.c`, after the keyboard block and before network packing: `button[0] = true` if the latch is on and `power >= reserve·9` (reserve = Off/25 %/50 % of 900). Manual fire enters earlier (OR) and ignores the reserve. No hysteresis: firing becomes limited by income at the reserve level. 25 % = 225 > the largest stock `shieldT` (180), so the shield keeps regenerating.
+  - **HUD:** `bike_autofire_active()` and `bike_autofire_held_back()` (also in `BikeHud.autofire_on/held`).
+- **Regress:** `--regress-bike-events=FILE` (id 443; lines `tick,action[,arg]`): `autofire_toggle|autofire_on|autofire_off`, `set,K=V`, `fire_on|fire_off` (injected manual fire), and for testing only `immortal` and `equip,special=N|sidekicks=L/R|shield=N`. `check_bike.sh` gained the surge cases (each effect on against all off), auto-fire on/off mid-level, reserve under low income and manual fire ignoring the reserve; coverage lines `Bike effects:`, `Bike autofire:` and `Bike end state:`. The old cases pin `surge_superbomb=0` (the default is on), so their digests did not change; the state digest only includes the latch after it has been used.
+- **Air mouse and remote buttons (T3b.2), `bike_controls.[ch]`:** in-game steering applies with `master && air_mouse` (`bike_controls_air_play()`) and the button translation in menus with `master && remote_buttons` (`bike_controls_remote()`), each independent of the other; `--ftms-off` turns both off (`bike_master_on()`). With either condition off the path is stock, byte for byte.
+  - **In-game steering** (only with the gate open, 1P): `mainint.c` forces `inputDevice = 0` for player 1 (the `config.c` default is keyboard + mouse and the 1P mouse would be dead). Relative movement is multiplied by `pointer_sensitivity` (25–400 %, 100 % = stock, remainders carried in integers) before the ±30 clamp. Relative mode is already turned on at the start of the level (`tyrian2.c`); nothing changed there. **One-Euro smoothing was not ported** (the `pointer_smoothing` key was removed; old configs still load): sensitivity is enough and the filter would require extra state in the determinism contract.
+  - **In game:** OK (left click) holds fire; Back (right click) opens the game menu (like Esc; chosen over pause because it is the only way to leave the level), with re-arming: it only fires after seeing the button released, so the click that closes the menu does not reopen it; the middle button keeps the stock action. Media: Play/Pause pauses (same re-arm rule), Next switches the rear shot mode, Previous fires both sidekicks (held, like a key). The Menu key (`Application`) remains only on auto-fire (`autofire_key2`); the air mouse does not handle it, so there is no double handling. The "Remote Buttons" row of the menu turns `remote_buttons` on (T5.1); old configs with `air_mouse` on and without the key load with it on.
+  - **Menus and screens** (`keyboard.c`, button translation only): OK becomes Enter and Back becomes Esc, acting on the focused row and not on the pointer position; the other buttons are discarded and pointer movement neither changes the focus nor shows the pointer. This fixes in one go the Back button in the shop and the data cube, the right button on the Yes of the quit prompt and the screens that reacted to any button. Specific adjustments: the title opens the quit prompt instead of quitting (`tyrian2.c`); the quit prompt starts on No; names (high score and save file) come pre-filled with `PILOT`, so Enter accepts; the launcher (`launcher.c`) acts on focus, Back leaves a dialog without closing the app.
+  - **Real bug fixed unconditionally:** `opentyr.c`, the picker's click test compared `mouseInput.y` with a limit in x; now `mouseInput.x < xMenuItemValue + wMenuItemValue`. Regress does not deliver mouse events, so no baseline changed.
+  - **Regress:** `--regress-bike-events` gained `mouse_move,dx,dy` (once), `mouse_drive,dx,dy` (per frame until changed), `mouse_down|mouse_up,l|r|m` and `key_down|key_up,play_pause|next|prev`. `check_bike.sh` covers: deterministic steering with 50/100/200 %, buttons and media, game menu and pause (tick 498 = last of a 600-frame run) and, in each, `air_mouse` or master off = stock. Coverage line `Bike air:`; `Bike end state:` gained `x=`/`y=`. The menu button translation has no case of its own: regress discards every SDL event. Audit and state of the fixes in `doc/ftms/remote-navigation-audit.md`.
+- **Touch controls (T3b.3), `src/bike_touch.[ch]`:** everything only with `master && touch` and the gate open (1P in a level; never 2P, network or demo); with any of them off the path is stock, byte for byte. Minimal hooks: `bike_touch_filter()` at the start of the `handleSdlEvents` loop (`keyboard.c`), `bike_touch_input()` after the air mouse block in `mainint.c` and `bike_touch_frame()` in `bike_controls_frame()`.
+  - **Drag to steer:** the first finger that touches the playfield moves the ship by its displacement (absolute position mapped by `mapWindowPointToScreen`, so there is no accumulated error; no virtual joystick). The delta, multiplied by `pointer_sensitivity` (the same setting as the air mouse, 25–400 %, remainders carried in integers), is added to `mouseXC/YC`; the ±30 clamp and the stock inertia still apply (at most 30 per frame, the excess stays in a queue of up to 120). Gain 1: a finger that moves 26 px moves the ship ~18 px at 100 %.
+  - **Synthesized clicks:** SDL3 turns touch into mouse (`which == SDL_TOUCH_MOUSEID`). Outside the game this is kept (touches in menus work as clicks, including with `air_mouse` on: touch never goes through the OK/Back translation). In game, the synthesized mouse of a finger that started in game is discarded until the next touch, so as not to count twice or fire by click. "In game" = the last pass of `level_loop` was less than 250 ms ago and no zone opened a menu or pause, so touches in pause and in the game menu are stock.
+  - **Touch zones** in the side strips, in horizontal bands (no joystick): **left** REAR (rear shot mode), SK-L, SK-R (sidekicks, held while the finger is in the zone, at least 4 frames); **right** BOMB (both sidekicks together, which is the stock superbomb trigger), AUTO (turns auto-fire on/off, no effect with the option Off), MENU (game menu) and PAUSE. **Two fingers** on the field, quick (up to 400 ms) and still (up to 10 px), open the game menu. There is no fire zone: auto-fire is the expected companion.
+  - **Geometry:** the zones are the two side strips of the frame. In Modern widescreen they are the panels (`modern_side_panel_width()`; the mouse maps the field in local coordinates 0..263, panels outside that). In Classic and Modern 4:3 they are the 24 px margin and the 32 px bar of the 320 frame, small but usable; the black letterbox bars are not zones. Modern draws dotted outlines and labels of the zones in the panels (`hud_draw_touch_zones`, presentation only, only with touch on in game); Classic draws nothing so as to stay byte for byte.
+  - **Auto-fire hint:** with Touch on and Auto-fire Off, the help line of the menu says "Touch fires via Auto-fire: set it to Toggle." and the HUD's AUTO label appears dimmed.
+  - **Regress:** `--regress-bike-events` gained `finger_down|finger_move,id,x,y` and `finger_up,id` (x, y in thousandths of the window; the two-finger clock uses 14 ms per tick) and `equip,rear=N`; coverage line `Bike touch:`. `check_bike.sh` covers deterministic steering with 50/100/200 %, each zone, two fingers quick against slow, and in all of them touch or master off = stock, plus the HUD with zones (`snap-hud-touch`, state identical to the HUD without touch). The 207 baselines and the old digests did not change. Hardware verification (Surface) is in `doc/ftms/controls-probe.md`.
+- **"Bike and Controls" menu** (`src/bike_menu.[ch]`, T2.5): Setup gains the row "Bike and Controls..." (`SETUP_MENU_BIKE`); the list scrolls (Graphics is full) and has Master, Bike Power, Bridge (host:port text box, default 127.0.0.1:8787), FTP (50 to 500 W, step 5), Strength, Floor, the four surges, Auto-fire (Off/Toggle), Auto-fire Reserve (Off/25%/50%), Air Mouse, Pointer Speed, Touch Controls and Bike HUD. The pinned status line shows the link (Off, Connecting, Connected, Streaming), watts, rpm and the age of the last sample. Arrows, Enter and Esc are enough (mouse too); left/right accelerate while the key is held. Each change writes to `bike_settings` immediately (nothing is cached), takes effect on the next frame and is saved with the configuration. Features not yet implemented (surges, auto-fire, air mouse, touch) already persist the value. The game itself shows "Bike and Controls" in the game menu (ESC) when the master is on (or after opening the menu once in the session), never in a network game; with the master off that menu is identical to stock.
+- **HUD** (T2.6): only when master and "Bike HUD" are on and the gate is open (`bike_hud_visible()`). Modern: in the status panel, above the generator name, link dot (green streaming, yellow connected, orange connecting, red link lost, gray off), watts and rpm, effort bar, surge meter and an AUTO/HOLD/SURGE line (AUTO reads `bike_autofire_state()`, today a stub that returns false until T3b.1). Classic and Modern 4:3: only link dot and watts, above the superbombs. Read-only from `bike_hud()`: it never writes state, settings or RNG; `tools/check_bike.sh` proves that the HUD on does not change the state hash.
 
 ---
 
 ## 5. Tyrian 2000
 
-- **Conteúdo:** 5 episódios, naves e armas novas, Timed Battle, arcade de 9 naves, Super Tyrian, Destruct, modo Natal; 13 bancos de shapes, 31 efeitos sonoros (vozes deslocadas), 14 imagens e 24 paletas, 126 créditos, 74 fases (E1–E5). As cinco demos são idênticas às do 2.1 e só jogam o episódio 1.
-- **Regras por variante** (`game_rules.[ch]`): eventos de fase 58/59/68/83/84/85/99 (o 68 é explosão aleatória no 2.1 e substituição de inimigo no 2000), sidekicks com carga que não disparam sozinhos, rear "None", twiddles do 2000, rastro do Flying Punch, high score do Hazudra Fodder, Timed Battle (cronômetros, bônus e roteamento do fork; sem save ao iniciar a batalha).
-- **Renderer Modern no 2000:** tudo o que o 2.1 tem (widescreen, HUD novo com rótulos semânticos, interpolação, luz, VFX, Depth, CRT, held); a auditoria não achou defeito no renderer porque tags e luz vêm do contexto do objeto.
-- **Placares:** `src/highscores.[ch]` unifica os das duas variantes.
-- **Fidelidade:** o fork marca eventos novos e o rastro do Flying Punch como aproximações; a comparação com o DOS é manual (ver §8).
+- **Content:** 5 episodes, new ships and weapons, Timed Battle, 9-ship arcade, Super Tyrian, Destruct, Christmas mode; 13 shape banks, 31 sound effects (voices shifted), 14 pictures and 24 palettes, 126 credits, 74 levels (E1–E5). The five demos are identical to those of 2.1 and only play episode 1.
+- **Per-variant rules** (`game_rules.[ch]`): level events 58/59/68/83/84/85/99 (68 is a random explosion in 2.1 and an enemy replacement in 2000), charging sidekicks that do not fire by themselves, rear "None", 2000 twiddles, Flying Punch trail, Hazudra Fodder high score, Timed Battle (timers, bonuses and routing from the fork; no save when the battle starts).
+- **Modern renderer in 2000:** everything 2.1 has (widescreen, new HUD with semantic labels, interpolation, light, VFX, Depth, CRT, held); the audit found no defect in the renderer because tags and light come from the object's context.
+- **High scores:** `src/highscores.[ch]` unifies those of both variants.
+- **Fidelity:** the fork marks new events and the Flying Punch trail as approximations; comparison with DOS is manual (see §8).
 
 ---
 
-## 6. Testes, regressão e CI
+## 6. Tests, regression and CI
 
-Comandos e opções completos: [`AGENTS.md`](../AGENTS.md). Resumo do sistema:
+Complete commands and options: [`AGENTS.md`](../AGENTS.md). Summary of the system:
 
-- **Harness headless** (`SDL_VIDEO_DRIVER=dummy`, relógio virtual): hashes por tick de quadro (8 bits + paleta e canvas Modern) e de estado (RNG, jogadores, inimigos, tiros, barras de chefe, `tempW`, eventos, explosões; escalares little-endian de largura fixa). Em modo regress só `SDL_EVENT_QUIT` passa, joysticks ficam inertes, o foco é fixo, os handlers de sinal do SDL ficam desligados (o harness reporta "killed by signal"), e no macOS o processo sobe com `SDL_HINT_MAC_BACKGROUND_APP`. Cenários jogam fases reais com a nave invencível (`youAreCheating`), então "Cheaters always prosper." aparece nos baselines.
-- **Suítes:** `make regress` (2.1: 207 casos + guards, portão da CI); `make regress-2000` (183 casos, dados necessários, paralela, manifesto e baselines em `test/regress-2000/`); `make regress-quick` (subconjunto crítico + guards baratos + 2000 opcional, ~20–25 s); `-j`/`REGRESS_JOBS`; `REGRESS_ONLY`/`--case=REGEX`. Casos Modern de gameplay rodam em `-d4`. Os baselines do 2.1 são gerados no Mac mas batem entre plataformas (todos os hashes de quadro bateram nos cinco runners).
-- **Cobertura:** demos × níveis de detalhe; 5 cenários sintéticos para os smoothies; áudio offline (`--regress-audio`); telas (`--regress-screen`, `--regress-menu`); flow com teclado virtual (`--regress-flow`); fixtures de regras; matriz final (§6.1); Depth/camadas/held/CRT/PROGRESS com checks próprios; `--regress-demo-hud-check`; stick virtual (`--regress-stick`).
-- **Guards:** `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_bike_effort.sh`, `check_bike.sh`, `check_installer.sh` (zips sintéticos e `tools/curl_stub.c`, nunca chega à rede), `check_final_regression.sh`, `check_display.sh`, `check_progress.sh`, `check_depth_*.sh`, `check_rng_order.sh`.
-- **Varreduras longas** (`--interp-check`/`--smoothness-check`/`--replay-check` completas) só no workflow manual `regress-full.yml`; nunca localmente.
-- **Processo de teste do coordenador:** só o quick localmente; push do branch e a CI como portão completo. Visual: o usuário prefere testar no jogo; capturas só a pedido.
+- **Headless harness** (`SDL_VIDEO_DRIVER=dummy`, virtual clock): per-tick hashes of the frame (8 bits + palette and Modern canvas) and of the state (RNG, players, enemies, shots, boss bars, `tempW`, events, explosions; fixed-width little-endian scalars). In regress mode only `SDL_EVENT_QUIT` passes, joysticks are inert, focus is fixed, SDL signal handlers are off (the harness reports "killed by signal"), and on macOS the process starts with `SDL_HINT_MAC_BACKGROUND_APP`. Scenarios play real levels with the ship invincible (`youAreCheating`), so "Cheaters always prosper." appears in the baselines.
+- **Suites:** `make regress` (2.1: 207 cases + guards, the CI gate); `make regress-2000` (183 cases, data required, parallel, manifest and baselines in `test/regress-2000/`); `make regress-quick` (critical subset + cheap guards + optional 2000, ~20–25 s); `-j`/`REGRESS_JOBS`; `REGRESS_ONLY`/`--case=REGEX`. Modern gameplay cases run at `-d4`. The 2.1 baselines are generated on the Mac but match across platforms (all frame hashes matched on the five runners).
+- **Coverage:** demos × detail levels; 5 synthetic scenarios for the smoothies; offline audio (`--regress-audio`); screens (`--regress-screen`, `--regress-menu`); flow with virtual keyboard (`--regress-flow`); rule fixtures; final matrix (§6.1); Depth/layers/held/CRT/PROGRESS with their own checks; `--regress-demo-hud-check`; virtual stick (`--regress-stick`).
+- **Guards:** `check_no_t2000_data.sh`, `check_variant_bootstrap.sh`, `check_user_paths.sh`, `check_game_rules.sh`, `check_bike_effort.sh`, `check_bike.sh`, `check_installer.sh` (synthetic zips and `tools/curl_stub.c`, never reaches the network), `check_final_regression.sh`, `check_display.sh`, `check_progress.sh`, `check_depth_*.sh`, `check_rng_order.sh`.
+- **Long sweeps** (full `--interp-check`/`--smoothness-check`/`--replay-check`) only in the manual workflow `regress-full.yml`; never locally.
+- **Coordinator's test process:** only quick locally; branch push and CI as the full gate. Visual: the user prefers to test in the game; captures only on request.
 
-### 6.1 Matriz de testes (§7 do antigo plano 2000)
+### 6.1 Test matrix (§7 of the old 2000 plan)
 
-| Área | 2.1 | 2000 |
+| Area | 2.1 | 2000 |
 |---|:---:|:---:|
 | Launcher | ✓ | ✓ |
-| Detecção de dados | ✓ | ✓ |
-| Instalação de dados | N/A | ✓ |
-| Menu principal | ✓ | ✓ |
-| Episódios 1–4 | ✓ | ✓ |
-| Episódio 5 | N/A | ✓ |
+| Data detection | ✓ | ✓ |
+| Data installation | N/A | ✓ |
+| Main menu | ✓ | ✓ |
+| Episodes 1–4 | ✓ | ✓ |
+| Episode 5 | N/A | ✓ |
 | Timed Battle | N/A | ✓ |
-| Naves, armas, inimigos, bosses | ✓ | ✓ |
-| Áudio | ✓ | ✓ |
+| Ships, weapons, enemies, bosses | ✓ | ✓ |
+| Audio | ✓ | ✓ |
 | Save/Load | ✓ | ✓ |
-| Widescreen, renderer moderno | ✓ | ✓ |
-| Pause, controle | ✓ | ✓ |
+| Widescreen, modern renderer | ✓ | ✓ |
+| Pause, control | ✓ | ✓ |
 
-### 6.2 CI e releases
-- `.github/workflows/{linux,macos,windows}.yml` rodam em push/PR de qualquer branch: build, `make regress`, `tools/fetch_t2000_data.sh` (camanis.net, tamanho + SHA-256 exatos, em `$RUNNER_TEMP`, **sem cache do Actions** porque o cache de um repositório público é legível por PRs de fork) e `make regress-2000`. Na falha sobem só `*.txt`/`*.log`. Runners: Linux x86_64/arm64, macOS, Windows x86_64 (MSYS2; **sem Windows arm64**, que roda o pacote x86_64 pela emulação).
-- **Job de decisão** (`.github/ci/decide.cjs`): pula pushes só de Markdown, `docs/` ou `.worker-reports/` e pushes cujo SHA já passou no mesmo workflow em outro branch; `workflow_dispatch` roda sempre.
-- **Release:** reaproveita os pacotes do push verde do mesmo SHA e só anexa os bytes originais (recompila só se não houver push verde; falha alto se expirados). Pacotes: Linux x86_64/arm64, Windows x86_64, macOS universal; levam só dados 2.1. Versões publicadas até agora: v0.1.0 … v0.6.0 (a última: depth shadows).
-- Windows/MSYS2: sem scripts de shell via `CreateProcess`, usar `cygpath` para caminhos e `python` instalado.
-- Empacotamento: `make_macos.sh` (frameworks SDL3/SDL3_net fixados por SHA-256, app universal), `make_linux.sh` (SDL3 estático do código-fonte, fixado e verificado).
+### 6.2 CI and releases
+- `.github/workflows/{linux,macos,windows}.yml` run on push/PR of any branch: build, `make regress`, `tools/fetch_t2000_data.sh` (camanis.net, exact size + SHA-256, in `$RUNNER_TEMP`, **no Actions cache** because a public repository's cache is readable by fork PRs) and `make regress-2000`. On failure only `*.txt`/`*.log` are uploaded. Runners: Linux x86_64/arm64, macOS, Windows x86_64 (MSYS2; **no Windows arm64**, which runs the x86_64 package under emulation).
+- **Decision job** (`.github/ci/decide.cjs`): skips pushes that only touch Markdown, `docs/` or `.worker-reports/` and pushes whose SHA already passed the same workflow on another branch; `workflow_dispatch` always runs.
+- **Release:** reuses the packages from the green push of the same SHA and only attaches the original bytes (rebuilds only if there is no green push; fails loudly if expired). Packages: Linux x86_64/arm64, Windows x86_64, macOS universal; they carry only 2.1 data. Versions published so far: v0.1.0 … v0.6.0 (the latest: depth shadows).
+- Windows/MSYS2: no shell scripts through `CreateProcess`, use `cygpath` for paths and have `python` installed.
+- Packaging: `make_macos.sh` (SDL3/SDL3_net frameworks pinned by SHA-256, universal app), `make_linux.sh` (static SDL3 from source code, pinned and verified).
 
 ---
 
-## 7. Decisões em vigor
+## 7. Decisions in force
 
-| Decisão | Motivo |
+| Decision | Reason |
 |---|---|
-| Backend SDL3; composição Modern na CPU | efeitos na grade de 320×200 custam < 1 ms; portátil e determinístico |
-| Efeitos na grade lógica; arte só procedural | sem artista; evita mistura de resoluções |
-| Lógica no tick fixo; desenho interpolado ≥ 60 Hz | preserva demos, rede e regressão; acaba a trepidação de 35 Hz |
-| Modern: só o HUD novo; HUD nos painéis laterais | o original é redundante; usa o espaço do widescreen |
-| Visão estendida descartada | só ~24 px de arte real por lado e mostrar objetos daria informação que o original não dava |
-| Pixel aspect Original (1,2) e escala sharp bilinear fixos no Modern; scalers de software removidos | "só queremos pixels perfeitos"; sem escolha da pior opção |
-| Detalhe Pentium fixo no Modern | não oferecer versão pior |
-| Lighting Off/Low/High com seletor único; Depth Off/On | simplicidade; o usuário aprovou High 1997/Low 1198 e névoa 30 jogando |
-| Áudio: só Nuked OPL3 | única melhoria aceita |
-| Dados de teste = zip oficial do `get_data.sh`; CI roda a regressão | clone novo reproduz os baselines |
-| 2000: fork no `master` (`aad5aca`); download da Camanis com hash fixo; instalação manual/GOG | fonte do autor, nada hospedado |
-| Apresentação/controle compartilhados; saves, placares e progresso por variante | evita sobrescrever saves |
-| Launcher sempre abre, dentro do binário; `--variant=` só para regress/automação | decisão do usuário |
-| Pacote de release leva só dados 2.1 (freeware) | evita problema jurídico |
-| Windows arm64 fora da CI/releases | pouca adoção e runner lento/instável |
-| Analógico/zona morta/curva só no Modern; Classic idêntico | byte-exact |
-| Regressão local enxuta; CI como portão | suítes longas; só o coordenador roda o quick |
-| Workers não fazem commit/push/troca de branch; coordenador revisa e commita só por caminho explícito | evita publicar trabalho sem revisão |
-| Tarefa nova → agente novo (contexto limpo); correção da mesma tarefa volta ao mesmo agente | sem contexto poluído |
-| Workers hoje: Codex GPT-6.1 Sol (medium) | escolha do usuário |
+| SDL3 backend; Modern composition on the CPU | effects on the 320×200 grid cost < 1 ms; portable and deterministic |
+| Effects on the logical grid; art only procedural | no artist; avoids mixing resolutions |
+| Logic on the fixed tick; interpolated drawing ≥ 60 Hz | preserves demos, network and regression; ends the 35 Hz judder |
+| Modern: only the new HUD; HUD in the side panels | the original is redundant; uses the widescreen space |
+| Extended view discarded | only ~24 px of real art per side and showing objects would give information the original did not |
+| Pixel aspect Original (1.2) and sharp bilinear scale fixed in Modern; software scalers removed | "we only want perfect pixels"; no choosing the worst option |
+| Pentium detail fixed in Modern | do not offer a worse version |
+| Lighting Off/Low/High with a single selector; Depth Off/On | simplicity; the user approved High 1997/Low 1198 and fog 30 by playing |
+| Audio: only Nuked OPL3 | the only accepted improvement |
+| Test data = official zip from `get_data.sh`; CI runs the regression | a fresh clone reproduces the baselines |
+| 2000: fork on `master` (`aad5aca`); Camanis download with pinned hash; manual/GOG install | the author's source, nothing hosted |
+| Presentation/control shared; saves, high scores and progress per variant | avoids overwriting saves |
+| Launcher always opens, inside the binary; `--variant=` only for regress/automation | user's decision |
+| Release package carries only 2.1 data (freeware) | avoids a legal problem |
+| Windows arm64 out of CI/releases | little adoption and slow/unstable runner |
+| Analog/dead zone/curve only in Modern; Classic identical | byte-exact |
+| Lean local regression; CI as the gate | long suites; only the coordinator runs quick |
+| Workers do not commit/push/switch branches; the coordinator reviews and commits only by explicit path | avoids publishing unreviewed work |
+| New task → new agent (clean context); a fix to the same task goes back to the same agent | no polluted context |
+| Workers today: Codex GPT-6.1 Sol (medium) | user's choice |
 
 ---
 
-## 8. Pendente, em aberto e limitações
+## 8. Pending, open and limitations
 
-**Conferir no DOS original** (aproximações do fork): eventos 58/59/68, trilha 198, roteamento e bônus do Timed Battle (inclui overflow de 16 bits do bônus de tempo, mapeamento batalha→episódio, seção 44 do E1 com shapes inexistentes, bônus de vidas, música e cancelamento do placar), estado 8 do Super Tyrian, sprite do Pretzel Pete. Em aberto também: 77 bytes sobrando no fim de cada bloco de itens do 2000.
+**Check against the original DOS** (fork approximations): events 58/59/68, trail 198, Timed Battle routing and bonus (includes the 16-bit overflow of the time bonus, battle→episode mapping, E1 section 44 with nonexistent shapes, lives bonus, music and high-score cancellation), Super Tyrian state 8, the Pretzel Pete sprite. Also open: 77 spare bytes at the end of each 2000 item block.
 
-**Só manual:** Steam Deck físico para o 2000 e desempenho a 60/90 Hz, seletor de arquivos nativo e download no Windows, ultrawide/HiDPI físicos no Cocoa; comparação visual com o 2000 original no Classic.
+**Manual only:** physical Steam Deck for 2000 and performance at 60/90 Hz, native file picker and download on Windows, physical ultrawide/HiDPI on Cocoa; visual comparison with the original 2000 in Classic.
 
-**Funcionalidade:**
-- Nitidez em Retina: `SDL_WINDOW_HIGH_PIXEL_DENSITY` não é pedido (medir se melhora).
-- Acessibilidade (menos flashes e partículas, cores alternativas de tiros, intensidade ajustável): futuro.
-- HUD expandido do plano original (nomes e nível das armas, munição e carga dos sidekicks, numéricos): só parcialmente atendido pelo HUD atual.
-- PROGRESS: sem grafo por trechos, perfis certificados, bosses sem barra ou cobertura de todos os caminhos/modos.
-- Fase 8 do 2000 (regressão final): a matriz está coberta por `check_final_regression.sh`; "o 2000 não depende por acidente dos dados do 2.1" e "instalador em todos os cenários" seguem como critério de rotina, sem item formal de fechamento.
-- Janela do Modern tem tamanho próprio, mas o modo Integer com PAR 1,2 em janelas pequenas (640×400) fica quase quadrado (visto antes da reformulação de escala; reconferir).
-- Rede: o lock-step em jogo nunca foi exercitado.
-- Projeto Visual Studio (`visualc/`): lista todos os fontes, mas a compilação nativa não é testada pela CI (que usa MSYS2).
-- Os baselines Classic dependem de libm; valem enquanto os hashes bateram nos cinco runners.
-- O fork do 2000 não tem arena multiplayer; a rede do 2000 nunca foi testada.
-- A release que reaproveita pacotes só foi exercitada de verdade a partir da v0.6.0.
+**Functionality:**
+- Sharpness on Retina: `SDL_WINDOW_HIGH_PIXEL_DENSITY` is not requested (measure whether it improves).
+- Accessibility (fewer flashes and particles, alternative shot colors, adjustable intensity): future.
+- Expanded HUD from the original plan (weapon names and levels, sidekick ammo and charge, numerics): only partially met by the current HUD.
+- PROGRESS: no per-stretch graph, certified profiles, bosses without a bar or coverage of all paths/modes.
+- Phase 8 of 2000 (final regression): the matrix is covered by `check_final_regression.sh`; "2000 does not depend by accident on the 2.1 data" and "installer in all scenarios" remain as routine criteria, with no formal closing item.
+- The Modern window has its own size, but Integer mode with PAR 1.2 in small windows (640×400) ends up almost square (seen before the scale rework; recheck).
+- Network: in-game lock-step has never been exercised.
+- Visual Studio project (`visualc/`): lists all the sources, but native compilation is not tested by CI (which uses MSYS2).
+- The Classic baselines depend on libm; they hold as long as the hashes matched on the five runners.
+- The 2000 fork has no multiplayer arena; 2000 networking has never been tested.
+- The release that reuses packages was only truly exercised from v0.6.0 on.
