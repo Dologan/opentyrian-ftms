@@ -54,7 +54,7 @@ function Get-Health([int] $Port) {
 
 # A running Flywheel as @{ Port = ...; Mode = ... }, or $null. runtime.json is only a hint (a crash
 # can leave it stale), so the port it names must answer /healthz; otherwise the default port is probed
-# (also the case for the Python bridge, which writes no runtime.json).
+# (also the case for the Python bridge, which keeps its runtime.json in its own data folder).
 function Find-Flywheel {
     $port = Get-RuntimePort
     if ($port) {
