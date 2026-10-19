@@ -1,10 +1,11 @@
 #!/bin/sh
 # check_bike_ws.sh - LOCAL ONLY (not run by CI or `make regress`): exercises
 # src/bike_ws.c, the non-blocking Flywheel bridge client.  It needs a C
-# compiler, SDL3 + SDL3_net (pkg-config), python and the Flywheel checkout with
-# uv, so it stays out of the CI matrix.
+# compiler, SDL3 + SDL3_net (pkg-config) and python; `live` also needs Flywheel
+# (the Rust `flywheel-cli` or the Python bridge checkout with uv), so it stays
+# out of the CI matrix.
 #
-#   tools/check_bike_ws.sh [fake|blackhole|refused|live ...]   (default: all)
+#   tools/check_bike_ws.sh [fake|tolerance|rider|blackhole|refused|live ...]   (default: all)
 #
 #   fake       protocol cases against an in-process fake server (no network)
 #   rider      the shared 'rider' fixtures (test/bike/protocol/rider): the bridge's active rider and FTP
@@ -12,11 +13,13 @@
 #              vendored from Flywheel's shared/protocol/fixtures/tolerance) through the same fake server
 #   blackhole  10.255.255.1: the poll loop must keep ticking, no call blocks
 #   refused    nothing listening: backoff 0.5, 1, 2, 4, 5 s
-#   live       real `flywheel-bridge run --source sim`: watts follow the
+#   live       real Flywheel `run --source sim`: watts follow the
 #              cadence sent with {"type":"sim"}; kill + restart the bridge and
 #              the client must reconnect
 #
-# Environment: FLYWHEEL_DIR (default $HOME/../home/user/flywheel -> /home/user/flywheel),
+# Environment: FLYWHEEL_CLI (path to the Rust app's `flywheel-cli`; when set, `live` runs it
+#              instead of the Python bridge, e.g. $FLYWHEEL_DIR/app/target/debug/flywheel-cli),
+#              FLYWHEEL_DIR (Flywheel checkout for the Python bridge, default /home/user/flywheel),
 #              UV (default uv on PATH, else /root/.local/bin/uv), CC, BRIDGE_PORT (8791),
 #              BLACKHOLE_HOST (10.255.255.1; not routable in some networks - then
 #              the check still passes because it only asserts non-blocking behaviour).
@@ -25,6 +28,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CC="${CC:-cc}"
 FLYWHEEL_DIR="${FLYWHEEL_DIR:-/home/user/flywheel}"
+FLYWHEEL_CLI="${FLYWHEEL_CLI:-}"
 UV="${UV:-$(command -v uv 2>/dev/null || echo /root/.local/bin/uv)}"
 PORT="${BRIDGE_PORT:-8791}"
 BLACKHOLE_HOST="${BLACKHOLE_HOST:-10.255.255.1}"
@@ -49,8 +53,13 @@ start_bridge() {
 	mkdir -p "$WORK/data/profiles"
 	printf '%s\n' '{"id":"ann","name":"Ann","ftpW":230,"ftpSource":"test","ftpUpdatedAt":"2026-10-14T10:00:00Z","ftpBike":{"id":"AA:BB","name":"Q200B"}}' \
 		> "$WORK/data/profiles/ann.json"
-	(cd "$FLYWHEEL_DIR/bridge" && exec "$UV" run flywheel-bridge run --source sim --no-record --rider ann \
-		--port "$PORT" --data-dir "$WORK/data") >> "$WORK/bridge.log" 2>&1 &
+	if [ -n "$FLYWHEEL_CLI" ]; then
+		"$FLYWHEEL_CLI" run --source sim --no-record --rider ann \
+			--port "$PORT" --data-dir "$WORK/data" >> "$WORK/bridge.log" 2>&1 &
+	else
+		(cd "$FLYWHEEL_DIR/bridge" && exec "$UV" run flywheel-bridge run --source sim --no-record --rider ann \
+			--port "$PORT" --data-dir "$WORK/data") >> "$WORK/bridge.log" 2>&1 &
+	fi
 	BRIDGE_PID=$!
 	i=0
 	while [ "$i" -lt 100 ]; do
@@ -97,8 +106,15 @@ for t in "$@"; do
 		"$WORK/bike_ws_test" refused "$FREE" || rc=1
 		;;
 	live)
-		if [ ! -d "$FLYWHEEL_DIR/bridge" ]; then
-			echo "SKIP live: no Flywheel checkout at $FLYWHEEL_DIR (set FLYWHEEL_DIR)"
+		if [ -n "$FLYWHEEL_CLI" ]; then
+			if [ ! -x "$FLYWHEEL_CLI" ]; then
+				echo "FAIL live: FLYWHEEL_CLI=$FLYWHEEL_CLI is not an executable"
+				rc=1
+				continue
+			fi
+			echo "live: against $FLYWHEEL_CLI"
+		elif [ ! -d "$FLYWHEEL_DIR/bridge" ]; then
+			echo "SKIP live: no Flywheel checkout at $FLYWHEEL_DIR (set FLYWHEEL_CLI or FLYWHEEL_DIR)"
 			continue
 		fi
 		start_bridge || { rc=1; continue; }
