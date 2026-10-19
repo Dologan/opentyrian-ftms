@@ -353,7 +353,7 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
 			logInfo("  --regress-bike-rider=FTP[@PCT][:NAME]  Regress only: pretend the bridge announced this rider;");
 			logInfo("                               @PCT (50-150) adds an intensity preset: effective FTP = (FTP*PCT+50)/100");
-			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
+			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8585)");
 			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
 			logInfo("  --ftms-log=FILE              Write a per-second bike calibration CSV (watts, refill, power, shots) while playing");
 			logInfo("  --ftms-test-level=E:L        Local bridge check: start that level directly with the bike on (tools/check_bike_bridge.sh)");

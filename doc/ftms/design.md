@@ -66,7 +66,7 @@ typedef struct { bool master, generator, hud;
   bool ftp_auto;                                          /* ftp_source: use the bridge's rider FTP (default) */
   uint8_t floor;                                          /* units/frame, default 8 */
   uint16_t bias_pct, gain_pct, cap_pct;                   /* 50, 100 ("Strength"), 150 */
-  char bridge_host[64]; uint16_t bridge_port;             /* 127.0.0.1, 8787 */
+  char bridge_host[64]; uint16_t bridge_port;             /* 127.0.0.1, 8585 */
 } BikeSettings;
 typedef struct { uint32_t seq; bool power_valid, cadence_valid; bq16 power_w, cadence_rpm;
   uint64_t arrival_us; } BikeSample;
@@ -143,7 +143,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `air_mouse`, `pointer_sensitivity`, `touch`, `remote_buttons` (independent: menu translation no longer needs Air Mouse; `pointer_smoothing` was never implemented and is retired: old configs still load, a config with Air Mouse on and no `remote_buttons` key loads with Remote Buttons on)
   - `ftp`, `ftp_source` (`auto` | `manual`, see §3a), `floor`, `bias`, `strength` (gain), `cap`
   - `superbomb_cooldown` (seconds, 0-600, default 60; 0 lifts the rate limit; not in the menu)
-  - `bridge_host`, `bridge_port`
+  - `bridge_host`, `bridge_port` (default 8585; older default 8787), `bridge_port_v` (marker, not a setting: written as `2` on every save; a section without it loads a saved 8787 as 8585)
 - **CLI ids 440–459** (add to the AGENTS table). No name may be a prefix of another (getopt accepts prefixes). Nothing in `check_bike.sh` enforces this: check by hand when adding an option.
 
   | id | option | id | option |

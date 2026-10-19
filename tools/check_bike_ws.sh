@@ -98,7 +98,7 @@ for t in "$@"; do
 		"$WORK/bike_ws_test" rider "$ROOT/test/bike/protocol/rider" || rc=1
 		;;
 	blackhole)
-		"$WORK/bike_ws_test" blackhole "$BLACKHOLE_HOST" 8787 || rc=1
+		"$WORK/bike_ws_test" blackhole "$BLACKHOLE_HOST" 8585 || rc=1
 		;;
 	refused)
 		# a port nothing listens on: bind to port 0 to find a free one, release it
