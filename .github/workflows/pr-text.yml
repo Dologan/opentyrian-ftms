@@ -1,0 +1,24 @@
+name: PR text
+
+# Session links must not appear in PR titles or descriptions (CLAUDE.md, "Session links").
+# The GitHub tool used by agents appends one to new PRs, so this catches it at once.
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+permissions: {}
+
+jobs:
+  no-session-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: No session links in the title or description
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s\n%s\n' "$TITLE" "$BODY" | grep -nE 'claude\.ai/code/session_|Claude-Session:'; then
+            echo "::error::Remove the session link from the PR title or description (see CLAUDE.md)."
+            exit 1
+          fi
+          echo "No session links."

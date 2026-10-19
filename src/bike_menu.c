@@ -285,7 +285,7 @@ static bool bridge_commit(const char *text)
 		strcpy(port, colon + 1);
 	}
 	else
-		strcpy(port, "8787");
+		strcpy(port, "8585");
 
 	{
 		BikeSettings saved = bike_settings;

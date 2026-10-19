@@ -83,7 +83,7 @@ void bike_settings_default(BikeSettings *s)
 	s->gain_pct = 100;
 	s->cap_pct = 150;
 	strcpy(s->bridge_host, "127.0.0.1");
-	s->bridge_port = 8787;
+	s->bridge_port = BIKE_DEFAULT_PORT;
 }
 
 static bool parse_bool(const char *v, bool *out)
@@ -280,6 +280,8 @@ bool bike_settings_set_list(const char *list)
 	return true;
 }
 
+#define BIKE_OLD_DEFAULT_PORT 8787 /* the bridge default before bridge_port_v=2 */
+
 /* ---- config ([ftms] section) --------------------------------------------- */
 
 static const char *const config_keys[] = {
@@ -343,6 +345,12 @@ void bike_config_load(void)
 		if (config_get_string_option(section, config_keys[i], &value) && !bike_settings_set(config_keys[i], value))
 			logWarn("opentyrian.cfg [ftms]: ignoring invalid %s = %s", config_keys[i], value);
 	}
+	/* The default port moved from 8787 to 8585.  Saving writes every key, so a saved 8787 from a config
+	 * without the bridge_port_v marker is the old default, not a choice: load it as the new default.
+	 * Saving then writes the marker, so a later deliberate 8787 is kept. */
+	if (bike_settings.bridge_port == BIKE_OLD_DEFAULT_PORT &&
+	    !(config_get_string_option(section, "bridge_port_v", &value) && strcmp(value, "2") == 0))
+		bike_settings.bridge_port = BIKE_DEFAULT_PORT;
 	/* Configs written before remote_buttons was its own switch: Air Mouse implied the menu buttons. */
 	if (bike_settings.air_mouse && !config_get_string_option(section, "remote_buttons", &value))
 		bike_settings.remote_buttons = true;
@@ -421,6 +429,7 @@ static void config_save_values(void)
 		setting_text(config_keys[i], text, sizeof text);
 		config_set_string_option(section, config_keys[i], text);
 	}
+	config_set_string_option(section, "bridge_port_v", "2");
 }
 
 static uint64_t wall_us(void) { return SDL_GetTicksNS() / 1000; }

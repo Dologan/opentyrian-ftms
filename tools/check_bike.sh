@@ -98,6 +98,20 @@ cfgval() { sed -n "s/^[[:space:]]*item '$1' '\(.*\)'\$/\1/p" "$CFGDIR/opentyrian
 [ "$(cfgval remote_buttons)" = on ] || fail config-override "an old Air Mouse config did not enable remote_buttons"
 echo "PASS bike-config-override: --ftms-bridge / --ftms-ftp are run-scoped, retired key tolerated, Air Mouse config migrated"
 
+# The default port moved 8787 -> 8585: a saved 8787 without the bridge_port_v marker is the old default and
+# loads as 8585; the save writes the marker, after which a deliberate 8787 is kept.
+for want in "none:8585" "2:8787"; do
+	mark="${want%%:*}"; expect="${want##*:}"
+	rm -rf "$CFGDIR"; mkdir -p "$CFGDIR"
+	{ printf "section 'ftms'\n\titem 'enabled' 'on'\n\titem 'bridge_port' '8787'\n"
+	  [ "$mark" = none ] || printf "\titem 'bridge_port_v' '%s'\n" "$mark"; } >"$CFGDIR/opentyrian.cfg"
+	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-user-root="$CFGDIR" --regress-user-files \
+		>"$OUT/cfg-port.log" 2>&1 || fail config-port "the save run failed"
+	[ "$(cfgval bridge_port)" = "$expect" ] && [ "$(cfgval bridge_port_v)" = 2 ] \
+		|| fail config-port "marker $mark: bridge_port=$(cfgval bridge_port) bridge_port_v=$(cfgval bridge_port_v), want $expect / 2"
+done
+echo "PASS bike-config-port: a saved 8787 without bridge_port_v loads as 8585, with it is kept"
+
 if [ "$MODE" = "--quick" ]; then
 	echo "PASS bike (quick)"
 	exit 0

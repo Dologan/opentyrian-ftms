@@ -32,7 +32,7 @@ typedef struct
 	uint8_t floor; /* units per frame, default 8 */
 	uint16_t bias_pct, gain_pct, cap_pct; /* 50, 100 ("Strength"), 150 */
 	char bridge_host[64];
-	uint16_t bridge_port; /* 127.0.0.1, 8787 */
+	uint16_t bridge_port; /* 127.0.0.1, BIKE_DEFAULT_PORT */
 } BikeSettings;
 
 typedef struct
@@ -43,6 +43,7 @@ typedef struct
 	uint64_t arrival_us;
 } BikeSample;
 
+#define BIKE_DEFAULT_PORT 8585 /* Flywheel default; it was 8787 until bridge_port_v=2 */
 #define BIKE_FTP_MIN 50
 #define BIKE_FTP_MAX 500
 
