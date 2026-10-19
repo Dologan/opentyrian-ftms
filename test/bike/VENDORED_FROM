@@ -2,7 +2,7 @@
 # then re-sync with `python3 -I tools/bike/vendor.py sync <flywheel checkout>`.
 # tools/check_bike_effort.sh verifies this record (`vendor.py verify`).
 source https://github.com/Dologan/flywheel
-commit 18fd8758809c2451895785979662209e57ff016b
+commit 638a6729b78276b29137efac57e8ba0ff2f94726
 effort-engine-version 1
 tree-sha256 9590e75deaa15db88c9151c63ca7e589add91a34a1a02cb93b5a3985ecee2464
 file test/bike/feeds/const150.csv 5e169afb2fa94acff4f098e7d4c4101c89955d1d242a26b742facf52f783fda6
