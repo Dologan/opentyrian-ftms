@@ -16,6 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+#include "bike_controls.h"
 #include "game_menu.h"
 
 #include "backgrnd.h"
@@ -49,6 +50,7 @@
 #include "video.h"
 
 #include <assert.h>
+#include <math.h>
 
 // The tables in game_schema.c size their per-menu arrays independently.
 typedef char menu_tables_match_menu_max[(GAME_MENU_COUNT == MENU_MAX + 0) ? 1 : -1];
@@ -2673,7 +2675,7 @@ void JE_drawMainMenuHelpText(void)
 
 JE_boolean JE_quitRequest(void)
 {
-	bool quit_selected = true, done = false;
+	bool quit_selected = !bike_controls_remote(), done = false; // remote mode: No is the default
 
 	SDL_Surface *background = VGAScreen;
 	VGAScreen = modern_dialog_begin(background);

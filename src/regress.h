@@ -56,6 +56,7 @@ extern int regress_detail;            // processorType to use (1..6)
 extern int regress_audio;             // non-zero = offline audio regression
 extern int regress_modern;            // non-zero = force the Modern presentation
 extern int regress_aspect;            // ModernAspect to force in regress mode; -1 = default (4:3)
+extern const char *regress_bike_set;      // --regress-bike-set=K=V,... (NULL = none)
 extern const char *regress_state_out_path;  // where per-frame state hashes are written
 extern int regress_vfx;               // VfxLevel to force in regress mode; -1 = off
 extern int regress_players;           // players to start a scenario with (1 or 2)
@@ -138,6 +139,7 @@ void regress_stick_log_tick(int player_x, int player_y, int x_velocity, int y_ve
 #define REGRESS_MENU_INGAME 1
 #define REGRESS_MENU_PAUSE  2
 #define REGRESS_MENU_HELP   3
+#define REGRESS_MENU_BIKE   4  // the in-game menu, then its Bike and Controls overlay
 
 extern int regress_menu_kind;  // REGRESS_MENU_* requested; NONE = disabled
 

@@ -1,0 +1,4 @@
+# manual fire held from tick 5 (never auto-fire), same gear: the reserve must not change anything
+0,immortal
+0,equip,shield=4
+5,fire_on

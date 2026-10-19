@@ -268,6 +268,11 @@ if guard_selected check_no_t2000_data.sh && ! "$ROOT/tools/check_no_t2000_data.s
 	exit 1
 fi
 
+if guard_selected check_no_conflict_markers.sh && ! "$ROOT/tools/check_no_conflict_markers.sh"; then
+	echo "ERROR: merge-conflict markers in tracked files"
+	exit 1
+fi
+
 if guard_selected check_variant_bootstrap.sh && ! "$ROOT/tools/check_variant_bootstrap.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/variant-bootstrap"; then
 	echo "ERROR: variant/bootstrap checks failed"
 	exit 1
@@ -280,6 +285,18 @@ fi
 
 if guard_selected check_game_rules.sh && ! "$ROOT/tools/check_game_rules.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/rules-21"; then
 	echo "ERROR: game-rules checks failed"
+	exit 1
+fi
+
+if guard_selected check_bike_effort.sh && ! "$ROOT/tools/check_bike_effort.sh"; then
+	echo "ERROR: bike-effort checks failed"
+	exit 1
+fi
+
+bike_args=()
+[ "$QUICK" -eq 1 ] && bike_args=(--quick)
+if guard_selected check_bike.sh && ! "$ROOT/tools/check_bike.sh" "$BIN" "$DATA_DIR" "$ACTUAL_DIR/bike" ${bike_args[@]+"${bike_args[@]}"}; then
+	echo "ERROR: bike core checks failed"
 	exit 1
 fi
 

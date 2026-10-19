@@ -19,6 +19,7 @@
 #ifndef _WIN32
 #define _XOPEN_SOURCE 700
 #endif
+#include "bike.h"
 #include "regress.h"
 #include "regress_flow.h"
 
@@ -210,6 +211,7 @@ int regress_stick = 0;
 int regress_stick_x = 0;
 int regress_stick_y = 0;
 const char *regress_stick_log_path = NULL;
+const char *regress_bike_set = NULL;
 int regress_reverse_y = 0;
 
 // --regress-front-weapon / --regress-front-power: -1 = leave the built-in
@@ -617,7 +619,9 @@ int regress_take_menu_request(void)
 
 	// Open on the run's last presented frame.  The in-level menus loop forever
 	// on input, so the frame cap ends the run on this first menu frame.
-	if (regress_frame + 1 < (unsigned long)regress_frames)
+	// The bike menu needs frames to walk its key script, so it opens earlier.
+	const unsigned long lead = regress_menu_kind == REGRESS_MENU_BIKE ? 40 : 0;
+	if (regress_frame + 1 + lead < (unsigned long)regress_frames)
 		return REGRESS_MENU_NONE;
 
 	regress_menu_taken = true;
@@ -746,6 +750,16 @@ static Uint64 regress_state_hash(void)
 	Uint64 hash = fnv_offset_basis;
 
 	hash_u64le(&hash, (Uint64)mt_rand_state_hash());
+
+	// `power` is not part of the stock state hash.  With the bike active it is
+	// the one new input, so it (and the bike state) is folded in only then,
+	// which keeps every existing baseline byte-identical.
+	if (bike_hash_active())
+	{
+		hash_u32le(&hash, (Uint32)power);
+		hash_u32le(&hash, (Uint32)lastPower);
+		hash_u64le(&hash, bike_state_digest());
+	}
 
 	for (int i = 0; i < 2; ++i)
 	{
@@ -1354,6 +1368,10 @@ void regress_init(void)
 	// is then not stamped and the shadow pass does nothing), so the baselines
 	// stay byte-for-byte unchanged; --regress-depth opts a run in.
 	modern_depth_quality = regress_depth_quality >= 0 ? (ModernDepth)regress_depth_quality : MODERN_DEPTH_OFF;
+	// The bike features are pinned off whatever the config says, so every
+	// existing baseline stays unchanged; --regress-bike-feed turns master and the
+	// generator on, --regress-bike-set then overrides any of it.
+	bike_regress_pin(regress_bike_set);
 	modern_held_set_check(regress_held_check);
 
 	// Dynamic fade/HUD interpolation check: exercise the interpolated
@@ -1491,6 +1509,8 @@ void regress_frame_reset(void)
 
 void regress_finish(void)
 {
+	bike_shutdown();
+
 	if (regress_stick_log != NULL)
 	{
 		fclose(regress_stick_log);

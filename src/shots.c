@@ -18,6 +18,7 @@
  */
 #include "shots.h"
 
+#include "bike.h"
 #include "drawlist.h"
 #include "episodes.h"
 #include "game_rules.h"
@@ -27,6 +28,8 @@
 #include "video.h"
 #include "vfx.h"
 #include "varz.h"
+
+#include <math.h>
 
 // I'm pretty sure the last extra entry is never used.
 PlayerShotDataType playerShotData[MAX_PWEAPON + 1]; /* [1..MaxPWeapon+1] */
@@ -346,7 +349,11 @@ JE_integer player_shot_create(JE_word portNum, uint bay_i, JE_word PX, JE_word P
 	const JE_WeaponType* weapon = &weapons[wpNum];
 
 	if (power < weaponPort[portNum].poweruse)
+	{
+		bike_note_shot(false);
 		return MAX_PWEAPON;
+	}
+	bike_note_shot(true);
 	power -= weaponPort[portNum].poweruse;
 
 	if (weapon->sound > 0)

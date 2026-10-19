@@ -65,6 +65,7 @@
 #include "video.h"
 
 #include <assert.h>
+#include <math.h>
 
 /*** Defines ***/
 #define UNIT_HEIGHT 12

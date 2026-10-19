@@ -20,6 +20,9 @@
 
 #include "animlib.h"
 #include "backgrnd.h"
+#include "bike.h"
+#include "bike_controls.h"
+#include "bike_rules.h"
 #include "demo.h"
 #include "drawlist.h"
 #include "episodes.h"
@@ -613,6 +616,7 @@ void JE_main(void)
 
 start_level:
 
+	bike_level_end();
 	modern_progress_resolve_end();
 
 	keyboardClearInput();
@@ -833,6 +837,7 @@ start_level_first:
 	backPos2 = 0;
 	backPos3 = 0;
 	power = 0;
+	bike_level_start();
 	starfield_speed = 1;
 
 	/* Setup player ship graphics */
@@ -1052,6 +1057,8 @@ start_level_first:
 
 level_loop:
 
+	bike_frame_tick();
+
 	//tempScreenSeg = game_screen; /* side-effect of game_screen */
 
 	if (isNetworkGame)
@@ -1158,7 +1165,7 @@ level_loop:
 			{
 				if (--shieldWait == 0)
 				{
-					shieldWait = 15;
+					shieldWait = bike_rules_shield_wait(15);
 
 					power -= shieldT;
 
@@ -1200,9 +1207,12 @@ level_loop:
 		}
 		else
 		{
-			power += powerAdd;
+			const unsigned refill = bike_generator_on() ? bike_rules_power_add(powerAdd) : powerAdd;
+			power += refill;
 			if (power > 900)
 				power = 900;
+			if (bike_log_active())
+				bike_log_refill(refill, powerAdd, power);
 
 			temp = power / 10;
 
@@ -2252,6 +2262,7 @@ draw_player_shot_loop_end:
 		switch (regress_take_menu_request())
 		{
 		case REGRESS_MENU_INGAME:
+		case REGRESS_MENU_BIKE:
 			ingamemenu_pressed = true;
 			break;
 		case REGRESS_MENU_PAUSE:
@@ -3201,7 +3212,7 @@ new_game:
 
 	/* Read Shapes.DAT */
 	char shapesFilename[13];
-	snprintf(shapesFilename, sizeof shapesFilename, "shapes%c.dat", tolower(char_shapeFile));
+	snprintf(shapesFilename, sizeof shapesFilename, "shapes%c.dat", tolower((unsigned char)char_shapeFile));
 
 	File shapesFile = dataFileOpen(shapesFilename, "rb");
 	if (shapesFile.error)
@@ -3628,18 +3639,25 @@ bool titleScreen(void)
 			{
 				JE_playSampleNum(S_SPRING);
 
-				done = true;
+				// Remote mode (air mouse): Back is also the remote's right
+				// click, so it asks first instead of quitting outright.
+				done = bike_controls_remote() ? JE_quitRequest() : true;
+				break;
 			}
 			default:
 				break;
 			}
 
-			SDL_Keycode sym = toupper(keyboardInput.sym);
+			SDL_Keycode sym = keyboardInput.sym;
+			// Convert key code (which is Unicode where possible) to uppercase ASCII.
+			char ch = sym < 0x80
+				? (char)toupper((int)sym)
+				: '\0';
 
 			for (size_t i = 0; i < arcade->engage_code; i++)
 			{
 				if (specialNameProgress[i] >= COUNTOF(specialName[i]) - 1 ||
-				    sym != (SDL_Keycode)(unsigned char)specialName[i][specialNameProgress[i]])
+				    ch != specialName[i][specialNameProgress[i]])
 				{
 					specialNameProgress[i] = 0;
 					continue;

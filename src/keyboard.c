@@ -18,6 +18,9 @@
  */
 #include "keyboard.h"
 
+#include "bike.h"
+#include "bike_controls.h"
+#include "bike_touch.h"
 #include "joystick.h"
 #include "logging.h"
 #include "mouse.h"
@@ -187,6 +190,8 @@ void mouseGetRelativePosition(Sint32 *const out_x, Sint32 *const out_y)
 
 void handleSdlEvents(void)
 {
+	bike_service();
+
 	SDL_Event ev;
 
 	while (SDL_PollEvent(&ev))
@@ -199,6 +204,11 @@ void handleSdlEvents(void)
 		// regress_init()), but dropping their events here keeps a hot-plugged
 		// device harmless even if one somehow got through.
 		if (regress_active() && ev.type != SDL_EVENT_QUIT)
+			continue;
+
+		// Touch controls (T3b.3): finger events, and the mouse events SDL
+		// synthesizes from a finger that is steering or tapping a zone in play.
+		if (bike_touch_filter(&ev))
 			continue;
 
 		switch (ev.type)
@@ -357,8 +367,6 @@ void handleSdlEvents(void)
 				mouseY = (Sint32)ev.motion.y;
 				mapWindowPointToScreen(&mouseX, &mouseY);
 
-				mouseHasMotionInput = true;
-
 				if (mouseRelativeEnabled && windowHasFocus)
 				{
 					mouseWindowXRelative += (Sint32)ev.motion.xrel;
@@ -372,14 +380,44 @@ void handleSdlEvents(void)
 				else
 					SDL_HideCursor();
 
-				if (ev.motion.xrel != 0 || ev.motion.yrel != 0)
+				// Remote mode: pointer drift must not move menu focus or show the
+				// pointer; the relative motion above still steers the ship.
+				// Outside remote mode this is the stock rule: every motion event counts.
+				if (!bike_controls_remote() ||
+				    ((ev.motion.xrel != 0 || ev.motion.yrel != 0) && bike_touch_is_touch_mouse(ev.motion.which)))
+				{
+					mouseHasMotionInput = true;
+
 					mouseInactive = false;
+				}
 				break;
 
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			{
 				Sint32 x = (Sint32)ev.button.x, y = (Sint32)ev.button.y;
 				mapWindowPointToScreen(&x, &y);
+
+				// Remote mode: OK (left) and Back (right) become Enter and Esc, acting
+				// on the focused row; other buttons are dropped.
+				// A finger tap is never translated: menus act on the row under it.
+				const int remoteKey = bike_touch_is_touch_mouse(ev.button.which) ? 0
+				                    : bike_controls_remote_button_key(ev.button.button);
+				if (remoteKey != 0)
+				{
+					if (remoteKey > 0 && keyboardInputsCount < COUNTOF(keyboardInputs))
+					{
+						KeyboardInput *const input = &keyboardInputs[keyboardInputsBack];
+						input->sym = remoteKey == SDL_SCANCODE_RETURN ? SDLK_RETURN : SDLK_ESCAPE;
+						input->scancode = (SDL_Scancode)remoteKey;
+						input->mod = SDL_KMOD_NONE;
+						input->ch = 0;
+						keyboardInputsBack = keyboardInputsBack == COUNTOF(keyboardInputs) - 1 ? 0 : keyboardInputsBack + 1;
+						keyboardInputsCount += 1;
+					}
+					mouseButtonsDown |= SDL_BUTTON_MASK(ev.button.button);
+					mouseInactive = true;
+					break;
+				}
 
 				if (mouseInputsCount < COUNTOF(mouseInputs))
 				{

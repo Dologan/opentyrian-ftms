@@ -29,6 +29,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1054,8 +1055,8 @@ void code_to_assignment(Joystick_assignment *assignment, const char *buffer)
 		}
 	}
 	
-	assignment->x_axis = (toupper(axis) == 'X');
-	assignment->negative_axis = (toupper(direction) == '-');
+	assignment->x_axis = (toupper((unsigned char)axis) == 'X');
+	assignment->negative_axis = (toupper((unsigned char)direction) == '-');
 }
 
 /* gives the short identifier for a joystick assignment

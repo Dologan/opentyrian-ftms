@@ -16,7 +16,7 @@ guard_selected() {
     if [ "$CASE_FILTER" != '.*' ]; then [[ "$1" =~ $CASE_FILTER ]]; return; fi
     [ "$QUICK" -eq 0 ] && return 0
     case "$1" in
-        check_no_t2000_data.sh|check_user_paths.sh|check_variant_bootstrap.sh|check_game_rules.sh) return 0 ;;
+        check_no_t2000_data.sh|check_no_conflict_markers.sh|check_user_paths.sh|check_variant_bootstrap.sh|check_game_rules.sh|check_bike_effort.sh|check_bike.sh) return 0 ;;
     esac
     return 1
 }

@@ -16,6 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+#include "bike_controls.h"
 #include "launcher.h"
 
 #include "file.h"
@@ -1776,6 +1777,27 @@ bool launcherChoose(GameVariant preselect, const char *data_override, const char
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			{
 				const bool click = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+				if (bike_controls_remote())
+				{
+					// Remote mode (air mouse): OK acts on the focused row, never on the
+					// pointer position; Back steps out of a dialog but never quits;
+					// drifting motion changes nothing.
+					if (click && ev.button.button == SDL_BUTTON_LEFT)
+					{
+						SDL_KeyboardEvent kev;
+						SDL_zero(kev);
+						kev.scancode = SDL_SCANCODE_RETURN;
+						step = handleKey(&view, &kev, data_override);
+					}
+					else if (click && ev.button.button == SDL_BUTTON_RIGHT)
+					{
+						if (view.overlay >= OVERLAY_INSTALL)
+							dialogBack(&view, data_override);
+						else
+							view.overlay = OVERLAY_NONE;
+					}
+					break;
+				}
 				if (click ? ev.button.button != SDL_BUTTON_LEFT : (ev.motion.xrel == 0 && ev.motion.yrel == 0))
 					break;  // a still pointer must not undo the keyboard's choice
 

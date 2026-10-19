@@ -18,6 +18,8 @@
  */
 #include "opentyr.h"
 
+#include "bike.h"
+#include "bike_menu.h"
 #include "bootstrap.h"
 #include "config.h"
 #include "crt_filter.h"
@@ -31,6 +33,7 @@
 #include "game_data.h"
 #include "gamepad_selftest.h"
 #include "helptext.h"
+#include "input_probe.h"
 #include "installer.h"
 #include "interp.h"
 #include "joystick.h"
@@ -262,6 +265,7 @@ void setupMenu(void)
 		MENU_ITEM_DONE,
 		MENU_ITEM_GRAPHICS,
 		MENU_ITEM_SOUND,
+		MENU_ITEM_BIKE,
 		MENU_ITEM_JUKEBOX,
 		MENU_ITEM_DESTRUCT,
 		MENU_ITEM_DISPLAY,
@@ -308,6 +312,7 @@ void setupMenu(void)
 			.items = {
 				{ MENU_ITEM_GRAPHICS, "Graphics...", "Change the graphics settings." },
 				{ MENU_ITEM_SOUND, "Sound...", "Change the sound settings." },
+				{ MENU_ITEM_BIKE, "Bike and Controls...", "Exercise bike power and riding controls." },
 				{ MENU_ITEM_JUKEBOX, "Jukebox", "Listen to the music of Tyrian." },
 				// { MENU_ITEM_DESTRUCT, "Destruct", "Play a bonus mini-game." },
 				{ MENU_ITEM_DONE, "Done", "Return to the main menu." },
@@ -346,6 +351,15 @@ void setupMenu(void)
 
 	if (shopSpriteSheet.data == NULL)
 		JE_loadCompShapes(&shopSpriteSheet, '1');  // need mouse pointer sprites
+
+	if (setup_menu_start == SETUP_MENU_BIKE)
+	{
+		// The Bike and Controls list is its own scrolling screen (bike_menu.c).
+		setup_menu_start = -1;
+		bike_menu(false);
+		fade_black(10);
+		return;
+	}
 
 	bool restart = true;
 
@@ -805,6 +819,17 @@ void setupMenu(void)
 					selectedMenuItemIndexes[currentMenu] = 0;
 					break;
 				}
+				case MENU_ITEM_BIKE:
+				{
+					JE_playSampleNum(S_SELECT);
+
+					fade_black(10);
+
+					bike_menu(false);
+
+					restart = true;
+					break;
+				}
 				case MENU_ITEM_JUKEBOX:
 				{
 					JE_playSampleNum(S_SELECT);
@@ -965,7 +990,7 @@ void setupMenu(void)
 
 							// Act on picker item.
 							if (mouseInput.button == SDL_BUTTON_LEFT &&
-							    mouseInput.x >= xMenuItemValue && mouseInput.y < xMenuItemValue + wMenuItemName &&
+							    mouseInput.x >= xMenuItemValue && mouseInput.x < xMenuItemValue + wMenuItemValue &&
 							    mouseInput.y >= yPickerItem && mouseInput.y < yPickerItem + hPickerItem)
 							{
 								action = true;
@@ -1224,6 +1249,8 @@ int main(int argc, char *argv[])
 	const bool launcher = regress_handoff != NULL || (!regress && !selftest && !bootstrap.variant_explicit && !help_requested);
 	bool video_ready = false;
 
+	bike_init();
+
 	if (userFilesEnabled())
 	{
 		loadConfiguration();
@@ -1241,6 +1268,24 @@ int main(int argc, char *argv[])
 		return regress_crt_selfcheck();
 	if (regress_depth_check)
 		return regress_depth_selfcheck();
+
+	if (input_probe_requested)
+	{
+		// Input diagnostic (T3b.0).  It needs the window, the joysticks and the
+		// game's font (so the game data), but no launcher, title or menus.
+		if (!gameDataPrepare())
+			return EXIT_FAILURE;
+		init_video();
+		init_joysticks();
+		loadPals();
+		JE_loadMainShapeTables("tyrian.shp");
+
+		input_probe_run();
+
+		deinit_joysticks();
+		deinit_video();
+		return EXIT_SUCCESS;
+	}
 
 	if (launcher)
 	{
@@ -1369,9 +1414,8 @@ int main(int argc, char *argv[])
 	{
 		logInfo("Initializing SDL audio...");
 
-		init_audio();
-
-		loadSndFile(xmas);
+		if (init_audio())
+			loadSndFile(xmas);
 	}
 	else
 	{
@@ -1413,6 +1457,26 @@ int main(int argc, char *argv[])
 		// This never returns.
 		regress_flow_run();
 		return EXIT_SUCCESS;
+	}
+
+	{
+		int test_e, test_l;
+
+		if (bike_test_level(&test_e, &test_l))
+		{
+			// --ftms-test-level (tools/check_bike_bridge.sh): the regress script path
+			// without regress mode, so the live bridge feeds the bike engine.
+			JE_initPlayerData();
+			JE_initEpisode((JE_byte)test_e);
+			initial_episode_num = (JE_byte)test_e;
+			episodeNum = (JE_byte)test_e;
+			mainLevel = (JE_byte)test_l;
+			playDemo = false;
+
+			JE_main();
+
+			return EXIT_SUCCESS;
+		}
 	}
 
 	if (regress_script_active())

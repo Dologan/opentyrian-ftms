@@ -1,0 +1,115 @@
+diff --git a/src/ftms_web.c b/src/ftms_web.c
+new file mode 100644
+index 0000000..c3d3dcd
+--- /dev/null
++++ b/src/ftms_web.c
+@@ -0,0 +1,24 @@
++/* Spike: bridge between browser-side FTMS (Web Bluetooth) and game C code.
++ * JS pushes each parsed notification via ftms_web_set(); the game polls the
++ * globals once per frame (or via ftms_web_get_*). Emscripten-only. */
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#include <stdint.h>
++
++volatile int32_t ftms_web_power_w = 0;
++volatile int32_t ftms_web_cadence_rpm = 0;
++volatile int32_t ftms_web_speed_x100 = 0;   /* km/h * 100 */
++volatile uint32_t ftms_web_seq = 0;         /* bumps on every notification */
++
++EMSCRIPTEN_KEEPALIVE void ftms_web_set(int32_t power_w, int32_t cadence_rpm, int32_t speed_x100)
++{
++	ftms_web_power_w = power_w;
++	ftms_web_cadence_rpm = cadence_rpm;
++	ftms_web_speed_x100 = speed_x100;
++	++ftms_web_seq;
++}
++
++EMSCRIPTEN_KEEPALIVE int32_t ftms_web_get_power(void)   { return ftms_web_power_w; }
++EMSCRIPTEN_KEEPALIVE int32_t ftms_web_get_cadence(void) { return ftms_web_cadence_rpm; }
++EMSCRIPTEN_KEEPALIVE uint32_t ftms_web_get_seq(void)    { return ftms_web_seq; }
++#endif
+diff --git a/web/persist-pre.js b/web/persist-pre.js
+new file mode 100644
+index 0000000..18fc68b
+--- /dev/null
++++ b/web/persist-pre.js
+@@ -0,0 +1,17 @@
++// Persist OpenTyrian's user dir (tyrian.cfg, opentyrian.cfg, tyrian.sav) in IndexedDB.
++Module.preRun = Module.preRun || [];
++Module.preRun.push(function () {
++  const dir = '/home/web_user/.config/opentyrian';
++  FS.mkdirTree(dir);
++  FS.mount(IDBFS, {}, dir);
++  addRunDependency('idbfs-load');
++  FS.syncfs(true, function (err) {
++    if (err) console.warn('IDBFS load failed', err);
++    removeRunDependency('idbfs-load');
++  });
++  const flush = () => FS.syncfs(false, e => e && console.warn('IDBFS save failed', e));
++  setInterval(flush, 5000);
++  addEventListener('pagehide', flush);
++  document.addEventListener('visibilitychange', () => document.hidden && flush());
++  Module.flushSaves = flush;
++});
+diff --git a/web/shell.html b/web/shell.html
+new file mode 100644
+index 0000000..4c038dc
+--- /dev/null
++++ b/web/shell.html
+@@ -0,0 +1,56 @@
++<!doctype html>
++<html><head><meta charset="utf-8"><title>OpenTyrian (wasm spike)</title>
++<meta name="viewport" content="width=device-width,initial-scale=1">
++<style>
++ html,body{margin:0;background:#000;color:#ccc;font:14px system-ui}
++ #bar{padding:6px;display:flex;gap:12px;align-items:center}
++ canvas{display:block;margin:0 auto;max-width:100vw;max-height:calc(100vh - 80px);aspect-ratio:8/5;width:auto;height:calc(100vh - 80px);image-rendering:pixelated;outline:none}
++</style></head><body>
++<div id="bar">
++ <button id="btn-ble">Connect bike (Web Bluetooth FTMS)</button>
++ <button id="btn-fake">Fake FTMS notifications</button>
++ <button id="btn-fs">Fullscreen</button>
++ <span id="ftms">power: - W  cadence: - rpm</span>
++</div>
++<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
++<script>
++var Module = {
++  canvas: document.getElementById('canvas'),
++  print: t => console.log(t), printErr: t => console.log(t),
++};
++// --- FTMS Indoor Bike Data (0x2AD2) parser -> C ---
++function parseIndoorBike(dv) {
++  const flags = dv.getUint16(0, true); let o = 2; const r = {};
++  if (!(flags & 0x0001)) { r.speed = dv.getUint16(o, true) / 100; o += 2; }   // km/h (bit0 = "more data": speed present when 0)
++  if (flags & 0x0002) o += 2;                                                   // avg speed
++  if (flags & 0x0004) { r.cadence = dv.getUint16(o, true) / 2; o += 2; }        // rpm, 0.5 res
++  if (flags & 0x0008) o += 2;                                                   // avg cadence
++  if (flags & 0x0010) o += 3;                                                   // total distance (u24)
++  if (flags & 0x0020) { r.resistance = dv.getInt16(o, true); o += 2; }
++  if (flags & 0x0040) { r.power = dv.getInt16(o, true); o += 2; }               // W
++  return r;
++}
++function pushToGame(r) {
++  if (!Module.ccall) return;
++  Module.ccall('ftms_web_set', null, ['number','number','number'],
++    [r.power|0, Math.round(r.cadence||0), Math.round((r.speed||0)*100)]);
++  document.getElementById('ftms').textContent = `power: ${r.power|0} W  cadence: ${Math.round(r.cadence||0)} rpm`;
++}
++document.getElementById('btn-ble').onclick = async () => {   // requires user gesture + secure context
++  const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [0x1826] }] });
++  const srv = await dev.gatt.connect();
++  const svc = await srv.getPrimaryService(0x1826);
++  const ch = await svc.getCharacteristic(0x2AD2);
++  ch.addEventListener('characteristicvaluechanged', e => pushToGame(parseIndoorBike(e.target.value)));
++  await ch.startNotifications();
++};
++document.getElementById('btn-fake').onclick = () => {
++  let t = 0; setInterval(() => {  // synthesise an FTMS packet to test the parse->C path without hardware
++    const b = new DataView(new ArrayBuffer(10)); b.setUint16(0, 0x0044, true);
++    b.setUint16(2, 2500+100*Math.sin(t), true); b.setUint16(4, 2*(80+10*Math.sin(t)), true); b.setInt16(6, 150+50*Math.sin(t), true);
++    pushToGame(parseIndoorBike(b)); t += 0.1; }, 250);
++};
++document.getElementById('btn-fs').onclick = () => document.getElementById('canvas').requestFullscreen();
++</script>
++{{{ SCRIPT }}}
++</body></html>

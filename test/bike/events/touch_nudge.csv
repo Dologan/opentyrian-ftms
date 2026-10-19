@@ -1,0 +1,19 @@
+# touch controls (T3b.3): a slow 26-px drag to the left (sensitivity scaling)
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+0,equip,rear=24
+5,finger_down,1,500,500
+6,finger_move,1,495,500
+7,finger_move,1,490,500
+8,finger_move,1,485,500
+9,finger_move,1,480,500
+10,finger_move,1,475,500
+11,finger_move,1,470,500
+12,finger_move,1,465,500
+13,finger_move,1,460,500
+14,finger_move,1,455,500
+15,finger_move,1,450,500
+16,finger_move,1,445,500
+17,finger_move,1,440,500
+18,finger_up,1

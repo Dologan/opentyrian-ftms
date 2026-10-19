@@ -19,6 +19,11 @@
 #include "mainint.h"
 
 #include "backgrnd.h"
+#include "bike_controls.h"
+#include "bike_touch.h"
+#include "bike_rules.h"
+#include "bike.h"
+#include "bike_menu.h"
 #include "config.h"
 #include "demo.h"
 #include "drawlist.h"
@@ -65,6 +70,7 @@
 #include "vfx.h"
 
 #include <assert.h>
+#include <math.h>
 #include <string.h>
 
 bool button[4];
@@ -1043,6 +1049,8 @@ void JE_initPlayerData(void)
 {
 	/* JE: New Game Items/Data */
 
+	bike_rules_new_game();
+
 	player[0].items.ship = 1;                     // USP Talon
 	player[0].items.weapon[FRONT_WEAPON].id = 1;  // Pulse Cannon
 	player[0].items.weapon[REAR_WEAPON].id = 0;   // None
@@ -1526,6 +1534,7 @@ JE_boolean JE_inGameSetup(void)
 		MENU_ITEM_GAME_SPEED,
 		MENU_ITEM_RETURN_TO_GAME,
 		MENU_ITEM_QUIT,
+		MENU_ITEM_BIKE,  // drawn between Game Speed and Return to Game; see below
 	};
 
 	const size_t helpIndexes[] = { 14, 14, 27, 28, 25, 26 };
@@ -1540,20 +1549,48 @@ JE_boolean JE_inGameSetup(void)
 	// Pentium there, so offering a worse level would only confuse the player.
 	// The remaining rows close the gap and keyboard/mouse navigation skips it.
 	// Classic shows it and edits the player's choice as before.
-	size_t visibleItems[COUNTOF(inGameText)];
+	// "Bike and Controls" opens the bike menu over the frozen game.  It is offered
+	// once the bike master switch is on (or the menu was opened here before, so it
+	// stays reachable after switching the master off), and never in network games.
+	const bool bikeRow = !isNetworkGame && (bike_master_on() || bike_menu_in_level_latched());
+
+	size_t visibleItems[COUNTOF(inGameText) + 1];
 	size_t menuItemsCount = 0;
 	for (size_t i = 0; i < COUNTOF(inGameText); ++i)
 	{
 		if (i == MENU_ITEM_DETAIL_LEVEL && presentation == PRESENTATION_MODERN)
 			continue;
+		if (i == MENU_ITEM_RETURN_TO_GAME && bikeRow)
+			visibleItems[menuItemsCount++] = MENU_ITEM_BIKE;
 
 		visibleItems[menuItemsCount++] = i;
 	}
 
 	size_t selectedIndex = 0;
 
+	// --regress-menu=bike: walk to the Bike row and open it, with a few steps
+	// queued for the overlay, so the snapshot shows the in-level bike menu.
+	if (regress_menu_kind == REGRESS_MENU_BIKE)
+	{
+		KeyboardInput in;
+
+		memset(&in, 0, sizeof in);
+		in.sym = SDLK_DOWN;
+		in.scancode = SDL_SCANCODE_DOWN;
+		for (size_t i = 0; i < menuItemsCount; ++i)
+		{
+			if (visibleItems[i] == MENU_ITEM_BIKE)
+				break;
+			keyboardPushInput(&in);
+		}
+		in.sym = SDLK_RETURN;
+		in.scancode = SDL_SCANCODE_RETURN;
+		keyboardPushInput(&in);
+		bike_menu_regress_keys("_]__]]]]]");
+	}
+
 	const int yMenuItems = 20;
-	const int dyMenuItems = 20;
+	const int dyMenuItems = menuItemsCount > COUNTOF(inGameText) ? 17 : 20;  // seven rows must fit the box
 	const int xMenuItem = 10;
 	const int xMenuItemName = xMenuItem;
 	const int wMenuItemName = 110;
@@ -1591,7 +1628,7 @@ JE_boolean JE_inGameSetup(void)
 		{
 			const int y = yMenuItems + dyMenuItems * i;
 
-			const char *const name = inGameText[visibleItems[i]];
+			const char *const name = visibleItems[i] == MENU_ITEM_BIKE ? "Bike and Controls" : inGameText[visibleItems[i]];
 
 			const bool selected = i == selectedIndex;
 
@@ -1623,7 +1660,11 @@ JE_boolean JE_inGameSetup(void)
 		}
 
 		// Draw help text.
-		JE_outTextAdjust(VGAScreen, 10, 147, mainMenuHelp[helpIndexes[visibleItems[selectedIndex]]], 14, 6, TINY_FONT, true);
+		JE_outTextAdjust(VGAScreen, 10, 147,
+		                 visibleItems[selectedIndex] == MENU_ITEM_BIKE
+		                     ? "Exercise bike power and riding controls."
+		                     : mainMenuHelp[helpIndexes[visibleItems[selectedIndex]]],
+		                 14, 6, TINY_FONT, true);
 
 		JE_mouseStart();
 		JE_showVGA();
@@ -1796,6 +1837,13 @@ JE_boolean JE_inGameSetup(void)
 				samples_disabled = !samples_disabled;
 
 				JE_playSampleNum(S_SELECT);
+				break;
+			}
+			case MENU_ITEM_BIKE:
+			{
+				JE_playSampleNum(S_SELECT);
+
+				bike_menu(true);
 				break;
 			}
 			case MENU_ITEM_RETURN_TO_GAME:
@@ -2082,6 +2130,12 @@ void JE_highScoreCheck(void)
 
 				strcpy(stemp, "                             ");
 				temp = 0;
+				if (bike_controls_remote())
+				{
+					// Remote mode: no way to type, so Enter accepts a default name.
+					memcpy(stemp, "PILOT", 5);
+					temp = 5;
+				}
 
 				// The shade below is drawn over another picture in Timed Battle, however
 				// odd that looks; that is what Tyrian 2000 does (fork 3e395df).
@@ -2903,6 +2957,12 @@ void JE_operation(JE_byte slot)
 		memcpy(stemp, saveFiles[slot-1].name, strlen(saveFiles[slot-1].name));
 		temp = strlen(stemp);
 		while (stemp[temp-1] == ' ' && --temp);
+		if (bike_controls_remote() && temp == 0)
+		{
+			// Remote mode: no way to type, so an empty slot gets a default name.
+			memcpy(stemp, "PILOT", 5);
+			temp = 5;
+		}
 
 		flash = 8 * 16 + 10;
 
@@ -3103,6 +3163,17 @@ void JE_inGameDisplays(void)
 	if (youAreCheating)
 	{
 		JE_outText(VGAScreen, 90, 170, "Cheaters always prosper.", 3, 4);
+	}
+
+	// Exercise bike: link dot and watts above the superbombs.  Only while the bike
+	// master switch and HUD setting are on, so every stock frame is unchanged.
+	if (bike_hud_visible())
+	{
+		const BikeHud *const b = bike_hud();
+
+		snprintf(tempstr, sizeof(tempstr), "%uW", (unsigned)((b->watts + 32768) >> 16));
+		fill_rectangle_xy(VGAScreen, 30, 150, 33, 153, (Uint8)bike_link_color(b->link, b->lost));
+		JE_textShade(VGAScreen, 37, 148, tempstr, 2, b->lost ? 2 : 5, FULL_SHADE);
 	}
 }
 
@@ -3665,6 +3736,13 @@ redo:
 					}
 				}
 
+				// Air mouse (T3b.2): in single-player play the pointer is the device
+				// for player 1, whatever the configured device.  Gate closed (2P,
+				// network, demo, arcade) or switched off: stock device handling.
+				const bool airMouse = playerNum_ == 1 && bike_controls_air_play();
+				if (airMouse)
+					inputDevice = 0;
+
 				/* joystick input */
 				if ((inputDevice == 0 || inputDevice >= 3) && joysticks > 0)
 				{
@@ -3727,11 +3805,21 @@ redo:
 				/* mouse input */
 				if ((inputDevice == 0 || inputDevice == 2) && has_mouse)
 				{
-					mouse_buttons_to_player(mouseButtonsDown, button);
+					if (airMouse)
+						bike_controls_air_buttons(mouseButtonsDown, button);
+					else
+						mouse_buttons_to_player(mouseButtonsDown, button);
 
 					Sint32 mouseXR;
 					Sint32 mouseYR;
 					mouseGetRelativePosition(&mouseXR, &mouseYR);
+					if (airMouse)
+					{
+						int airX = (int)mouseXR, airY = (int)mouseYR;
+						bike_controls_pointer(&airX, &airY);
+						mouseXR = airX;
+						mouseYR = airY;
+					}
 					mouseXC += mouseXR;
 					mouseYC += mouseYR;
 				}
@@ -3766,6 +3854,27 @@ redo:
 					if (recordDemo)
 						recordDemoKeys();
 				}
+
+				if (airMouse)
+					bike_controls_media_buttons(button); // media next/previous: rear mode, sidekicks
+
+				// Touch (T3b.3): the finger drag joins the mouse delta path, the
+				// side-panel tap zones hold their game buttons.  Gate closed: nothing.
+				if (playerNum_ == 1)
+				{
+					int touchX = mouseXC, touchY = mouseYC;
+					bike_touch_input(&touchX, &touchY, button);
+					mouseXC = (JE_integer)touchX;
+					mouseYC = (JE_integer)touchY;
+				}
+
+				// Bike auto-fire (T3b.1): latched toggle with an energy reserve.
+				// Manual fire was OR-ed above, so the reserve never blocks it; the gate
+				// is closed for network, demo, 2P and arcade play.
+				if (playerNum_ == 1 && bike_controls_injected_fire())
+					button[0] = true; // regress-injected manual fire
+				if (playerNum_ == 1 && bike_controls_autofire(power))
+					button[0] = true;
 
 				// Reverse controls: a level event may have overwritten the
 				// smoothie, so the regress harness re-asserts it per tick.
@@ -4728,7 +4837,7 @@ redo:
 			{
 				if (this_player->sidekick[i].charge < this_option->pwr)
 					++this_player->sidekick[i].charge;
-				this_player->sidekick[i].charge_ticks = 20;
+				this_player->sidekick[i].charge_ticks = bike_rules_sidekick_charge_ticks(20);
 			}
 		}
 	}

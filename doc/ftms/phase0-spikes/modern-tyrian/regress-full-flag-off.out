@@ -1,0 +1,3 @@
+SKIP chmod-only failure: directory remains writable; portable obstruction cases passed
+All 207 regression cases passed in 299.0s.
+real	5m42.672s

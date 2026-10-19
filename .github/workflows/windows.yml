@@ -21,8 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Release tags may predate these helpers; load them from the default branch.
-          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.sha }}
+          # A release runs the workflow file at the tagged commit, and that commit
+          # carries the matching .github/ci helpers. (The default branch may not:
+          # in this fork it still holds the upstream OpenTyrian workflows only.)
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/github-script@v8
         id: decide
@@ -112,6 +114,7 @@ jobs:
             test/regress/actual/*.txt
             test/regress/actual/*.log
           if-no-files-found: ignore
+          retention-days: 1
       - name: Fetch Tyrian 2000 data (download, verify, no cache)
         # Downloaded from the author's site in EVERY run and verified (size,
         # SHA-256, safe extraction, runtime manifest) by the script, into the
@@ -142,6 +145,7 @@ jobs:
             test/regress-2000/actual/*.txt
             test/regress-2000/actual/*.log
           if-no-files-found: ignore
+          retention-days: 1
       - name: Guard - no Tyrian 2000 data in the tree
         # Also part of `make regress`, but that is skipped on release events and
         # runs before the Tyrian 2000 data was ever on the runner.  Cheap, so run
@@ -154,6 +158,7 @@ jobs:
           # bundle every non-system DLL the exe needs (SDL3, SDL3_net, compiler runtime)
           ldd opentyrian.exe | grep -iv "system32\|/c/windows" | awk '{print $3}' | sort -u | xargs -I{} cp {} dist/opentyrian/
           cp -r data dist/opentyrian/data
+          cp tools/ftms/play-with-flywheel.ps1 "tools/ftms/Play with Flywheel.cmd" dist/opentyrian/
           cp COPYING dist/opentyrian/COPYING.txt
           cp doc/tyrian-freeware-license.txt dist/opentyrian/licenses/Tyrian.txt
           for pkg in SDL3 SDL3_net; do
@@ -164,10 +169,13 @@ jobs:
         run: mkdir -p /tmp/pkgtest && unzip -q "opentyrian-windows-${{ matrix.arch }}.zip" -d /tmp/pkgtest
       - name: Verify the package runs from a clean directory
         run: cd / && /tmp/pkgtest/opentyrian/opentyrian.exe --help
-      - uses: actions/upload-artifact@v7
+      - name: Upload the package (release builds and manual runs only)
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
         with:
           name: opentyrian-windows-${{ matrix.arch }}
           path: opentyrian-windows-${{ matrix.arch }}.zip
+          retention-days: 3
 
   release:
     name: Attach release packages
@@ -182,7 +190,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Download only package artifacts (reused push or fallback build)
         uses: actions/download-artifact@v8

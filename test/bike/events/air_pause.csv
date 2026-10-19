@@ -1,0 +1,5 @@
+# media Play/Pause pauses; same last-tick placement as air_menu.csv
+# tick,action
+0,immortal
+0,equip,sidekicks=1/1
+498,key_down,play_pause

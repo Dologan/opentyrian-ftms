@@ -20,11 +20,14 @@
 
 #include "arg_parse.h"
 #include "backgrnd.h"
+#include "bike.h"
+#include "bike_controls.h"
 #include "demo.h"
 #include "episodes.h"
 #include "file.h"
 #include "game_schema.h"
 #include "gamepad_selftest.h"
+#include "input_probe.h"
 #include "interp.h"
 #include "joystick.h"
 #include "logging.h"
@@ -140,6 +143,7 @@ const Options *JE_paramOptions(void)
 		{ 298, 0,   "regress-seed",      true },
 		{ 299, 0,   "regress-menu",      true },
 		{ 310, 0,   "log-file",          true },
+		{ 454, 0,   "input-probe",       false },
 		{ 301, 0,   "regress-smooth-effects-check", false },
 		{ 311, 0,   "regress-front-weapon", true },
 		{ 312, 0,   "regress-front-power",  true },
@@ -157,6 +161,17 @@ const Options *JE_paramOptions(void)
 		{ 306, 0,   "regress-stick",     true },
 		{ 307, 0,   "regress-stick-log", true },
 		{ 308, 0,   "regress-reverse-y", false },
+		
+		{ 440, 0,   "regress-bike-feed", true },
+		{ 441, 0,   "regress-bike-log",  true },
+		{ 442, 0,   "regress-bike-set",  true },
+		{ 443, 0,   "regress-bike-events", true },
+		{ 450, 0,   "ftms-bridge",       true },
+		{ 451, 0,   "ftms-ftp",          true },
+		{ 452, 0,   "ftms-off",          false },
+		{ 453, 0,   "ftms-log",          true },
+		{ 455, 0,   "ftms-test-level",   true },
+		{ 456, 0,   "regress-bike-rider", true },
 		
 		{ 0, 0, NULL, false }
 	};
@@ -296,11 +311,12 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-smooth-effects-check  Per level tick, assert the interpolated palette fade and");
 			logInfo("                               HUD bars stay between the two ticks (needs --regress-modern)");
 			logInfo("  --regress-menu=NAME          Open an in-level menu on the last presented frame:");
-			logInfo("                               ingame (ESC), pause (P) or help (F1)");
+			logInfo("                               ingame (ESC), pause (P), help (F1) or bike (ingame, then the bike menu)");
 			logInfo("                               (requires --regress-script and --regress-frames)");
 			logInfo("  --starfield-speed=PERCENT    Background starfield speed as a percentage of the");
 			logInfo("                               original rate (10-100, default 25); sub-pixel motion");
 			logInfo("  --log-file=FILE              Mirror the log into FILE as well as stderr");
+			logInfo("  --input-probe                Log raw input events (remote, touch, mouse) to input-probe.log");
 			logInfo("                               (default on Steam Deck: the user config directory)");
 			logInfo("  --smooth-motion=on|off       Modern gameplay at the display refresh with interpolated");
 			logInfo("                               motion (default on)");
@@ -331,6 +347,17 @@ void JE_paramCheck(int argc, char *argv[])
 			logInfo("  --regress-stick-log=FILE     Log the per-tick ship x/y and x/y velocity of a");
 			logInfo("                               --regress-stick run to FILE");
 			logInfo("  --regress-reverse-y          Regress only: force the reverse-controls smoothie on");
+			logInfo("  --regress-bike-feed=FILE|const:W[,RPM]  Regress only: scripted bike feed (tick,watts,cadence,connected)");
+			logInfo("  --regress-bike-log=FILE      Regress only: per-tick bike log");
+			logInfo("  --regress-bike-events=FILE   Regress only: injected bike events (tick,autofire_toggle|autofire_on|autofire_off|set|rider,ARG)");
+			logInfo("  --regress-bike-set=K=V[,K=V...]  Regress only: pin [ftms] settings (enabled, generator, ftp, ...)");
+			logInfo("  --regress-bike-rider=FTP[@PCT][:NAME]  Regress only: pretend the bridge announced this rider;");
+			logInfo("                               @PCT (50-150) adds an intensity preset: effective FTP = (FTP*PCT+50)/100");
+			logInfo("  --ftms-bridge=HOST[:PORT]    Bike bridge address (default 127.0.0.1:8787)");
+			logInfo("  --ftms-ftp=W                 Bike rider FTP in watts, 50-500");
+			logInfo("  --ftms-log=FILE              Write a per-second bike calibration CSV (watts, refill, power, shots) while playing");
+			logInfo("  --ftms-test-level=E:L        Local bridge check: start that level directly with the bike on (tools/check_bike_bridge.sh)");
+			logInfo("  --ftms-off                   Force the bike features off for this run");
 			logInfo("  --regress-front-weapon=N      Regress only: front weapon id (0-42) for --regress-script/--regress-level");
 			logInfo("  --regress-front-power=N       Regress only: front weapon power (1-11) for --regress-script/--regress-level");
 			logInfo("  --regress-rules=NAME          Code-owned gameplay fixture: events, spawn, sidekicks, twiddle, punch");
@@ -874,11 +901,17 @@ void JE_paramCheck(int argc, char *argv[])
 				regress_menu_kind = REGRESS_MENU_PAUSE;
 			else if (strcmp(option.arg, "help") == 0)
 				regress_menu_kind = REGRESS_MENU_HELP;
+			else if (strcmp(option.arg, "bike") == 0)
+				regress_menu_kind = REGRESS_MENU_BIKE;
 			else
 			{
-				logError("%s: --regress-menu must be ingame, pause or help", argv[0]);
+				logError("%s: --regress-menu must be ingame, pause, help or bike", argv[0]);
 				exit(EXIT_FAILURE);
 			}
+			break;
+
+		case 454: // --input-probe (T3b.0)
+			input_probe_requested = true;
 			break;
 
 		case 310: // --log-file
@@ -923,6 +956,85 @@ void JE_paramCheck(int argc, char *argv[])
 
 		case 308: // --regress-reverse-y
 			regress_reverse_y = 1;
+			break;
+
+		case 440: // --regress-bike-feed=FILE|const:W[,RPM]
+			if (!bike_script_load(option.arg))
+				exit(EXIT_FAILURE);
+			break;
+
+		case 441: // --regress-bike-log=FILE
+			bike_log_open(option.arg);
+			break;
+
+		case 443: // --regress-bike-events=FILE
+			if (!bike_controls_events_load(option.arg))
+				exit(EXIT_FAILURE);
+			break;
+
+		case 442: // --regress-bike-set=K=V[,K=V...]
+			regress_bike_set = option.arg;
+			break;
+
+		case 456: // --regress-bike-rider=FTP[@PCT][:NAME]
+			if (!bike_regress_rider(option.arg))
+			{
+				logError("%s: --regress-bike-rider must be FTP, FTP:NAME, FTP@PCT or FTP@PCT:NAME (PCT 50-150)", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 450: // --ftms-bridge=HOST[:PORT]
+		{
+			char host[sizeof bike_settings.bridge_host + 8];
+			char *colon;
+
+			if (strlen(option.arg) >= sizeof host)
+			{
+				logError("%s: --ftms-bridge address is too long", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			strcpy(host, option.arg);
+			colon = strrchr(host, ':');
+			if (colon != NULL)
+			{
+				*colon = '\0';
+				if (!bike_override_set("bridge_port", colon + 1))
+				{
+					logError("%s: --ftms-bridge port must be 1-65535", argv[0]);
+					exit(EXIT_FAILURE);
+				}
+			}
+			if (!bike_override_set("bridge_host", host))
+			{
+				logError("%s: --ftms-bridge needs a host name (at most %d characters)", argv[0], (int)sizeof bike_settings.bridge_host - 1);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
+
+		case 451: // --ftms-ftp=W
+			if (!bike_override_set("ftp", option.arg))
+			{
+				logError("%s: --ftms-ftp must be 50-500 watts", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 453: // --ftms-log=FILE
+			bike_calib_open(option.arg);
+			break;
+
+		case 455: // --ftms-test-level=E:L
+			if (!bike_test_level_set(option.arg))
+			{
+				logError("%s: --ftms-test-level must be EPISODE:LEVEL, for example 1:3", argv[0]);
+				exit(EXIT_FAILURE);
+			}
+			break;
+
+		case 452: // --ftms-off
+			bike_force_off();
 			break;
 
 		default:
@@ -1046,7 +1158,7 @@ void JE_paramCheck(int argc, char *argv[])
 	for (int i = option.argn; i < argc; ++i)
 	{
 		for (uint j = 0; j < strlen(argv[i]); ++j)
-			argv[i][j] = toupper(argv[i][j]);
+			argv[i][j] = (char)toupper((unsigned char)argv[i][j]);
 		
 		for (uint j = 0; j < COUNTOF(pars); ++j)
 		{

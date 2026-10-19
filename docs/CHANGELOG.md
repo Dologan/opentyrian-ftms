@@ -11,6 +11,61 @@ Convenções:
 
 ---
 
+## 2026-10-14
+
+### Bike (FTMS): correções da revisão de código (T5.1)
+- **Revisão:** achados e resolução em `doc/ftms/review-t51.md`.
+- **vcxproj:** marcadores de merge (`<<<<<<<`) em `visualc/opentyrian.vcxproj` quebravam o projeto do Visual Studio (o CI do Windows usa MSYS2 e não pegava). Corrigido; novo guard `tools/check_no_conflict_markers.sh` (no `make regress` e no quick).
+- **Overrides só de execução:** `--ftms-bridge`, `--ftms-ftp` e `--ftms-test-level` não são mais gravados em `[ftms]` (`bike_override_set` guarda o valor salvo e `bike_config_save` o regrava). Caso novo `bike-config-override` em `check_bike.sh`.
+- **`--ftms-off`** agora desliga também a tradução de botões, o toque e a linha do menu do jogo (`bike_master_on()`).
+- **Botões do controle remoto** têm chave e linha de menu próprias (`remote_buttons`, "Remote Buttons"), independentes do Air Mouse; `pointer_smoothing` (sem efeito) foi removida, configs antigas carregam.
+- **Reconexão da ponte:** o SDL3_net fica inicializado durante a vida do cliente (`bike_ws_shutdown` só na saída); trocar o endereço ou desligar o mestre abandona a resolução pendente e não espera mais o `getaddrinfo`.
+- **Idade da amostra** satura em 32 bits (dava a volta em ~71,6 min e fazia uma amostra velha parecer fresca).
+- **Cooldown do superbomb** persiste entre fases (e tentativas) e zera só em jogo novo; o digest `sgride` mudou por isso (a corrida reinicia a fase), único digest novo.
+- **Mouse stock:** movimento do mouse com delta zero volta a contar como no stock quando o modo remoto está desligado.
+- **Auto-fire:** a tecla de alternar (padrão A) é ignorada se estiver ligada a uma ação em `keySettings`.
+- Não feitos: o `--regress-bike-feed/events` fora do regress e a exclusão de toque no lançador (ver a revisão).
+
+### Bike (FTMS): controles por toque (T3b.3)
+- **Arrastar para dirigir:** o dedo no campo de jogo move a nave pelo seu deslocamento, somado ao caminho `mouseXC/YC` (clamp de ±30 e inércia stock mantidos), com a mesma `pointer_sensitivity` do mouse aéreo. O mouse sintetizado pelo SDL3 a partir do dedo é descartado em jogo (sem contagem dupla nem tiro por clique) e mantido fora dele, então os toques em menus continuam sendo cliques; o toque não passa pela tradução OK/Voltar do mouse aéreo.
+- **Zonas nos painéis laterais:** esquerda REAR, SK-L, SK-R; direita BOMB, AUTO, MENU, PAUSE; dois dedos rápidos abrem o menu do jogo. O Modern desenha as zonas (só apresentação); no Classic e no 4:3 as zonas são a margem e a barra do quadro de 320. Auto-fire é o companheiro esperado: com Touch ligado e Auto-fire Off, o menu avisa e o rótulo AUTO fica apagado.
+- **Código:** novo `src/bike_touch.[ch]` (também em `visualc/`), com um gancho em `handleSdlEvents`, um em `mainint.c` e um em `bike_controls_frame`.
+- **Testes:** `--regress-bike-events` ganhou `finger_down|finger_move|finger_up` e `equip,rear=N`; casos novos em `check_bike.sh` e uma captura do HUD com as zonas em `doc/ftms/screens/hud-touch.png`. Os 207 baselines e os digests antigos de `test/bike/regress.txt` não mudaram. O que verificar na Surface: `doc/ftms/controls-probe.md`.
+
+### Bike (FTMS): mouse aéreo e navegação pelo controle remoto (T3b.2, parte do T3b.4)
+- **Mouse aéreo:** com mestre e `air_mouse` ligados, o movimento relativo do ponteiro dirige a nave do jogador 1 em 1P (`inputDevice` forçado a 0 no `JE_playerMovement`), escalado por `pointer_sensitivity`, mantido o clamp de ±30. OK mantém o tiro, o clique direito abre o menu do jogo, Play/Pause pausa, Próxima/Anterior trocam o tiro traseiro e disparam os sidekicks. One-Euro não foi portado.
+- **Menus:** OK vira Enter e Voltar vira Esc (na linha focada, sem olhar o ponteiro), outros botões e a deriva do ponteiro são ignorados. Corrige o Voltar da loja, do cubo de dados e do lançador, o clique direito no Sim do pedido de saída, o título que saía com Voltar (agora pergunta) e os nomes em branco (`PILOT`). O pedido de saída começa em Não nesse modo.
+- **Bug do seletor** (`opentyr.c`): o clique comparava y com um limite em x. Corrigido sem condição; nenhum baseline mudou (o regress não entrega mouse).
+- **Testes:** novas ações de `--regress-bike-events` (movimento, botões e teclas de mídia injetados) e casos novos em `check_bike.sh`; os 207 baselines e os digests antigos de `test/bike/regress.txt` não mudaram. Tabela de problemas e estado em `doc/ftms/remote-navigation-audit.md`. Ainda abertos: confirmação ao sair pelo menu do jogo e pelo Esc do lançador, seletor de letras para os nomes, e a entrega real das teclas de mídia no Windows (sonda T3b.0).
+
+### Bike (FTMS): menu e HUD (T2.5, T2.6)
+- **Menu:** novo `src/bike_menu.[ch]`, "Bike and Controls..." no Setup (`SETUP_MENU_BIKE`) e no menu do jogo. Lista rolável com todos os toggles do `design.md` (mestre, Bike Power, Bridge host:port com caixa de texto, FTP com passo 5 e aceleração ao segurar, Strength, Floor, quatro surges, Auto-fire, reserva 25/50%, mouse aéreo, velocidade do ponteiro, toque, HUD) e uma linha de estado ao vivo. Aplica na hora e persiste em `[ftms]`; `&` e `<` não existem nas fontes do jogo, por isso o nome é "Bike and Controls".
+- **HUD:** Modern (painel de status do 1P: ponto de link, watts, rpm, esforço, medidor de surge, AUTO/HOLD/SURGE) e Classic (ponto e watts). Só desenha com mestre e HUD ligados. `bike_autofire_state()` é um stub (falso) até o auto-fire do T3b.1.
+- **Regress:** os 207 baselines não mudaram (a linha do menu do jogo só aparece com o mestre ligado). Novos `--regress-screen=bike-menu[-nav|-edit]` e `--regress-menu=bike`; `tools/check_bike.sh` guarda os hashes dos PNGs de menu e HUD e prova que o HUD não altera o hash de estado. Capturas em `doc/ftms/screens/`.
+
+### Bike (FTMS): núcleo no jogo (T2.2 a T2.4)
+- **Novo, opcional e desligado por padrão:** `src/bike.[ch]`, `src/bike_rules.[ch]` (o motor `bike_effort`/`bike_feed` já estava no branch). Interruptor mestre + um toggle por recurso, em `[ftms]` do `opentyrian.cfg`, na CLI (`--ftms-bridge`, `--ftms-ftp`, `--ftms-off`, ids 450–452) e no regress (`--regress-bike-feed`, `--regress-bike-log`, `--regress-bike-set`, ids 440–442).
+- **Gerador:** mapeamento C com acumulador de resto exato e mistura de volta ao stock quando o link cai (1,5 s de atraso, 1/2 por segundo). Sem fonte ou amostra o jogo usa o `powerAdd` stock. O simulador da tela de upgrade não muda.
+- **Hash de estado:** `power`, `lastPower` e o digest da bike só entram com feed ou mestre fixado ligado; nenhum dos 207 baselines mudou.
+- **Testes:** `tools/check_bike.sh` e `make regress-bike` (flag desligada = baseline, tudo explicitamente desligado = baseline, 150 W constante, rampa, queda do link, parada, FTP 50 e 500, duas pedaladas Q200B, determinismo; digests em `test/bike/regress.txt`). Um subconjunto roda no quick.
+- Pendente: transporte da ponte (`bike_ws`), efeitos de surge, auto-fire, HUD e menus (tarefas seguintes).
+
+### Bike (FTMS): efeitos de surge e auto-fire de alternar (T3.1, T3b.1)
+- **Surge:** quatro efeitos, cada um com toggle próprio sob o mestre (superbomb ligado por padrão, os outros desligados): +1 superbomb por overdrive-ready (teto 10), carga de sidekick 2x, recarga de special com decremento extra, regen de escudo de 15 até 8 quadros mantendo o custo do pool. Só com o portão aberto.
+- **Auto-fire:** `src/bike_controls.[ch]`. A opção só habilita; um aperto durante o jogo (tecla `A` ou Menu, ou clique do analógico direito) liga/desliga, sem menu, sem novo slot de `keySettings`. Reserva Off/25 %/50 % de 900 segura o tiro automático enquanto `power` está abaixo dela, para o escudo regenerar; o fogo manual ignora a reserva. O trinco sobrevive entre fases e começa desligado a cada execução. Acessores para o HUD: `bike_autofire_active()`, `bike_autofire_held_back()`.
+- **Regress:** `--regress-bike-events` (id 443) injeta alternâncias, fogo manual, mudanças de configuração e equipamento; novos casos em `check_bike.sh` com digests em `test/bike/regress.txt`. Os digests antigos não mudaram (os casos com overdrive fixam `surge_superbomb=0`); 207/207 casos do jogo inalterados.
+
+### Portes do OpenTyrian upstream (carlreinke, 216c771..624e2f2)
+- Portados por intenção, um commit cada, citando o hash upstream. Nenhuma linha de base mudou: 207/207 casos 2.1 passam.
+  - `216c771` `math.h` incluído onde usado (8 `.c`) e `TreatSpecificWarningsAsErrors=4013` no projeto MSVC.
+  - `49af573` `toupper`/`tolower` sem comportamento indefinido: o código das teclas secretas da tela de título e também os outros usos (`joystick.c`, `params.c`, `sprite.c`, nome do arquivo de shapes), que o upstream não tocou.
+  - `dda8863` movimento do mouse só conta como entrada quando é diferente de zero; espaços sobrando em `JE_showVGA`. A troca `SDL_FALSE` -> `SDL_DISABLE` é só de SDL2 e não se aplica.
+  - `52140ae` o arquivo de sons só é carregado se `init_audio()` der certo; se o dispositivo não abre, o subsistema de áudio é encerrado.
+  - `a0ed9fd` página de código UTF-8 no Windows: `visualc/opentyrian.manifest` embutido por `visualc/resources.rc`. O build MSYS2 já compila esse `.rc` com `windres`, então recebe o manifesto sem mudança extra (a regra do `Makefile` passou a depender do manifesto). Não testado no Windows.
+  - `a923d8b` `logFatal` formata a mensagem uma vez (antes reusava o `va_list`); passa por `SDL_LogMessage`, mantendo o `--log-file`.
+  - `624e2f2` **parcial**: `src/swar.h` + SWAR nas linhas de tiles do fundo, em `drawlist_apply_filter_screen` e nos filtros iced/blur, com saída idêntica por construção. Ficaram de fora a reescrita de lava/água (o próprio upstream diz "slightly different"), o `showHeadlight` (diverge do original para posições fora da faixa e falha as asserts do upstream em px=py=0 numa comparação exaustiva) e `showFlipped`/`showNormal` (o `interp_blit_playfield` já faz essa cópia).
+- Commits somente de README do upstream (`f3d4560`, `ba9c399`) ignorados.
+
 ## 2026-10-09
 
 ### Documentação: planos viram `MODERNIZATION.md` e `CHANGELOG.md`

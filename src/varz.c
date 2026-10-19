@@ -18,6 +18,8 @@
  */
 #include "varz.h"
 
+#include "bike.h"
+#include "bike_rules.h"
 #include "config.h"
 #include "drawlist.h"
 #include "editship.h"
@@ -37,6 +39,7 @@
 #include "vga256d.h"
 #include "video.h"
 
+#include <math.h>
 #include <string.h>
 
 JE_integer tempDat, tempDat2, tempDat3;
@@ -406,6 +409,7 @@ void JE_drawOptionLevel(void)
 
 void JE_tyrianHalt(JE_byte code)
 {
+	bike_shutdown();
 	deinit_audio();
 	deinit_video();
 	deinit_joysticks();
@@ -631,6 +635,8 @@ void JE_doSpecialShot(JE_byte playerNum, uint *armor, uint *shield)
 	if (specialWait > 0)
 	{
 		specialWait--;
+		if (specialWait > 0 && bike_rules_extra_special_tick())
+			specialWait--;
 	}
 	temp = SFExecuted[playerNum-1];
 	if (temp > 0 && shotRepeat[SHOT_SPECIAL] == 0 && flareDuration == 0)

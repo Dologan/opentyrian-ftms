@@ -1,0 +1,58 @@
+# Fixtures for consumers of the opt-in 'rider' message (docs/protocol.md "Capabilities").
+# Each line: <file> <kind> [key=value ...]
+#   kind   rider | no-ftp
+#            rider  the consumer ends up with this rider and FTP
+#            no-ftp the message carries no usable FTP: keep whatever FTP was already in use
+#   keys   id, name (ASCII-cleaned, see below), ftpW (as sent), ftpClamped (what a consumer that
+#          accepts 50..500 W holds, whole watts rounded half up), source
+#          For consumers of the opt-in 'intensity' capability (docs/intensity.md), every rider line
+#          also has:
+#          intensity    the preset name to show (ASCII-cleaned like name), or 'none' when the
+#                       message carries no usable 'intensity' block: then the consumer plays at ftpW
+#          percent, effectiveFtpW  the block's values (only when intensity is not none)
+#          playClamped  the FTP an intensity consumer that accepts 50..500 W plays at: effectiveFtpW
+#                       clamped, or ftpClamped when intensity is none. ftpClamped stays the measured
+#                       FTP, so a consumer without intensity support checks ftpClamped and is right.
+#          A usable block is an object with a whole-number effectiveFtpW in 1..10000, a whole-number
+#          percent in 50..150 and a non-empty string name; anything else in it is ignored. A no-ftp
+#          line ignores the block entirely.
+# Name cleaning for C-style consumers: JSON escapes are decoded (\u0041 -> A); a character above
+# ASCII, raw UTF-8 or as a \uXXXX escape, becomes one '?'; the result is cut to 31 characters.
+# Tokens never contain spaces, so a line splits on whitespace. A consumer checks the keys it knows.
+rider-basic.json                      rider id=ann name=Ann ftpW=230 ftpClamped=230 source=test intensity=none playClamped=230
+rider-minimal.json                    rider id=bo name=Bo ftpW=180 ftpClamped=180 intensity=none playClamped=180
+rider-fraction.json                   rider id=ann name=Ann ftpW=231.6 ftpClamped=232 intensity=none playClamped=232
+rider-clamp-low.json                  rider id=ann name=Ann ftpW=12 ftpClamped=50 intensity=none playClamped=50
+rider-clamp-high.json                 rider id=ann name=Ann ftpW=900 ftpClamped=500 intensity=none playClamped=500
+rider-escapes.json                    rider id=ann name=A"n\A/?? ftpW=200 ftpClamped=200 intensity=none playClamped=200
+rider-long-name.json                  rider id=ann name=abcdefghijklmnopqrstuvwxyz01234 ftpW=200 ftpClamped=200 intensity=none playClamped=200
+rider-decoys.json                     rider id=ann name=Ann ftpW=210 ftpClamped=210 source=test intensity=none playClamped=210
+rider-future-keys.json                rider id=ann name=Ann ftpW=200 ftpClamped=200 intensity=none playClamped=200
+rider-no-ftp.json                     no-ftp
+rider-string-ftp.json                 no-ftp
+rider-zero-ftp.json                   no-ftp
+rider-intensity.json                  rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-normal.json           rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Normal percent=100 effectiveFtpW=230 playClamped=230
+rider-intensity-clamp-high.json       rider id=ann name=Ann ftpW=450 ftpClamped=450 intensity=Max percent=150 effectiveFtpW=675 playClamped=500
+rider-intensity-fraction-ftp.json     rider id=ann name=Ann ftpW=229.5 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-inconsistent.json     rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=200 playClamped=200
+rider-intensity-escapes.json          rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=L?tt percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-decoy-ftp.json        rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-before-ftp.json       rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-after-ftp.json        rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-unknown-keys.json     rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=Easy percent=85 effectiveFtpW=196 playClamped=196
+rider-intensity-null.json             rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-string.json           rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-array.json            rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-number.json           rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-eff-zero.json         rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-eff-negative.json     rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-eff-fraction.json     rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-eff-huge.json         rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-eff-string.json       rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-eff-missing.json      rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-no-percent.json       rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-percent-high.json     rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-no-name.json          rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-empty-name.json       rider id=ann name=Ann ftpW=230 ftpClamped=230 intensity=none playClamped=230
+rider-intensity-only-nested-ftp.json  no-ftp
