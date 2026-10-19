@@ -11,7 +11,7 @@ real bike, and how the controls behave on the Surface. Plan for 45 to 60 minutes
 3. Switch the Q200B on, wake it by pedalling, and make sure nothing else holds its
    Bluetooth connection (close the phone app).
 4. Double-click `Play with Flywheel.cmd` in the game folder. It starts Flywheel if needed, waits for it,
-   and starts the game with `--ftms-bridge=127.0.0.1:8787`. To write the calibration CSV, start the game
+   and starts the game with `--ftms-bridge=127.0.0.1:8585`. To write the calibration CSV, start the game
    yourself with `--ftms-log=C:\Users\you\ftms-session1.csv` (use a new file name each run; the log is
    overwritten) while Flywheel is running.
    (On Linux or macOS: `tools/ftms/play-with-bike.sh --flywheel PATH --source ble -- --ftms-log=...`.)

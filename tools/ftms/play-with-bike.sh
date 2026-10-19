@@ -10,7 +10,7 @@
 #   --game PATH      game binary. Default: ./opentyrian at the repo root, or $OPENTYRIAN_BIN.
 #   -- GAME_ARGS...  everything after -- is passed to the game unchanged.
 #
-# The bike is requested with --ftms-bridge=127.0.0.1:8787 on the command line only; the game's
+# The bike is requested with --ftms-bridge=127.0.0.1:8585 on the command line only; the game's
 # defaults are unchanged. Requires uv and curl.
 #
 # Environment:
@@ -30,7 +30,7 @@ fail() {
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PORT=8787
+PORT=8585
 BRIDGE_ADDR="127.0.0.1:${PORT}"
 HEALTH_URL="http://127.0.0.1:${PORT}/healthz"
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/opentyrian-ftms/logs"

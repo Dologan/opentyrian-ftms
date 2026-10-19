@@ -140,9 +140,9 @@ tools/ftms/play-with-bike.sh --flywheel ../flywheel --source sim # simulated bik
 ```
 
 The helper starts the bridge, waits for it, launches the game with
-`--ftms-bridge=127.0.0.1:8787`, and stops the bridge when the game exits.
+`--ftms-bridge=127.0.0.1:8585`, and stops the bridge when the game exits.
 Anything after `--` goes to the game. Do not use it on Windows: it is for the
-Python bridge only, and would fight the Flywheel app for port 8787.
+Python bridge only, and would fight the Flywheel app for port 8585.
 
 Turn the bike on in **Setup → Bike and Controls...**, which is also in the in-game menu (as "Bike and Controls").
 The bridge options are `--ftms-bridge=HOST[:PORT]`, `--ftms-ftp=W` and
