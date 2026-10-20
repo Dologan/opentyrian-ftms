@@ -13,6 +13,12 @@ Conventions:
 
 ## 2026-10-20
 
+### Bike (FTMS): no power, no invented watts
+- **Why:** the owner decided that a bike that reports no power must not get watts made up from its cadence. The old fallback (cadence times a curve times FTP) is removed from `bike_effort.c`.
+- **Behaviour:** a fresh sample with `powerW` null leaves moving/stopped to the cadence and keeps `effort_w`, `effort_norm`, `baseline_w`, `surge`, `surge_meter` at 0; no surge starts and a running one ends (`BikeEffortSignals.no_power`). `bike.c` feeds the income blend the link as down for such samples (the existing link-loss path, no new one), so the refill is the stock one. The Modern HUD and the Classic readout show "no power" instead of watts; the gauge has no fill and no threshold marker.
+- **Golden that changed:** only `nopower` (the one feed with a bike without power; effort, baseline, norm, surge, surge meter, surging and events columns now all 0 while connected; the tail after the silent stop is the unchanged stale path), plus its line in `c_digests.txt`. The other 13 goldens and digests are identical. New unit check `check_no_power` in `test/unit/bike_effort_test.c`.
+- **Game digests:** no `test/bike/regress.txt` label feeds a null power (only the unit-level `nopower` feed does), so none is expected to move; to be confirmed with `make regress-bike` where SDL3 is available.
+
 ### Bike (FTMS): the surge rule is the fork's own; surge keys; 80 % default
 - **Why:** effort and surge are game mechanics, so each game owns them. Flywheel moved its effort data into its web game (its `a34faa5`) and no longer shares it. This fork stops depending on Flywheel for effort data.
 - **Test data:** the feeds and goldens moved from the vendored `test/bike/feeds` and `test/bike/golden` to the fork-owned `test/bike/effort/{feeds,golden}` (copied unchanged). `vendor.py` now vendors only the protocol fixtures (`test/bike/protocol/{tolerance,rider}`, 53 files); `trace_to_feed.py` was removed here (nothing uses it; it stays in Flywheel). `test/bike/golden/c_digests.txt` stayed there until it moved to `test/bike/effort/c_digests.txt` (same content, moved with `git mv`).

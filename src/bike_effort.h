@@ -51,6 +51,7 @@ typedef struct
 typedef struct
 {
 	bool moving, stale, surging;
+	bool no_power; /* a fresh sample without power: effort, baseline and surge are inactive (all zero) */
 	bq16 power_w, cadence_rpm, effort_w, effort_pct, effort_norm, baseline_w, surge, surge_meter;
 	uint8_t events;
 } BikeEffortSignals;

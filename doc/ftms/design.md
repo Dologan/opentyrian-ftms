@@ -231,7 +231,7 @@ dt_us = getFramePeriodTicks10() * max(frameCountMax,1) * 1000 / 1024
 ## 5. Effort engine port and golden fixtures
 
 - **Port**:
-  - Front half of `step()`: fresh/stale selection, power or the cadence-only fallback curve when `powerW` is null.
+  - Front half of `step()`: fresh/stale selection, power, or no power when `powerW` is null: a fresh sample without power invents no watts (since 2026-10-20; the cadence-times-FTP curve is gone). Moving/stopped still follows the cadence; `effort_w`, `effort_norm`, `baseline_w`, `surge` and `surge_meter` stay 0 (the baseline and warm-up are held at the start of a ride), no surge can start and a running one ends; `BikeEffortSignals.no_power` is set. `bike.c` then passes the link as down to `bike_rules_frame()`, so the income blends back to the stock refill by the existing link-loss path (after its usual delay; from level start it is stock at once). The HUD and the Classic readout show "no power" instead of watts and the gauge has no fill and no threshold marker.
   - `Ema`, `piecewise`, `clamp`.
   - `effortNorm`.
   - `updateMoving` with the 0.25 s start confirmation and coast-down (`updateCoastDown`, `start`, `stop`).

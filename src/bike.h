@@ -85,6 +85,7 @@ typedef struct
 	bool gate, generator_on, lost;
 	bq16 watts, cadence, effort_norm, surge_meter;
 	bool surging, autofire_on, autofire_held;
+	bool no_power; /* the bike reports a sample without power: show "no power", no gauge needle */
 	/* Power gauge: the smoothed power the surge test uses, the gauge's full scale, and the smoothed power
 	 * at which a surge would start (bike_surge_threshold_w(); has_threshold is false before the warm-up
 	 * or when not moving).  All Q16 watts. */

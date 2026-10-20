@@ -3171,7 +3171,10 @@ void JE_inGameDisplays(void)
 	{
 		const BikeHud *const b = bike_hud();
 
-		snprintf(tempstr, sizeof(tempstr), "%uW", (unsigned)((b->watts + 32768) >> 16));
+		if (b->no_power)
+			snprintf(tempstr, sizeof(tempstr), "no power");
+		else
+			snprintf(tempstr, sizeof(tempstr), "%uW", (unsigned)((b->watts + 32768) >> 16));
 		fill_rectangle_xy(VGAScreen, 30, 150, 33, 153, (Uint8)bike_link_color(b->link, b->lost));
 		// Surge-start cue: the watts flash in the surge colour (bank 7) for BIKE_SURGE_CUE_US.
 		const bool cue = b->cue_lit && !b->lost;

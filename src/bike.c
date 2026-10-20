@@ -896,7 +896,9 @@ void bike_frame_tick(void)
 
 	surge_cue_us = bike_surge_cue_step(surge_cue_us, last_dt_us, sig.events, sig.surging);
 
-	bike_rules_frame(&sig, link_up && have_sample, bike_generator_on(), last_dt_us);
+	/* No power reading counts as a missing link for the income: the existing blend returns it to the stock
+	 * refill (after the usual delay), exactly as when the link is lost; no new path. */
+	bike_rules_frame(&sig, link_up && have_sample && !sig.no_power, bike_generator_on(), last_dt_us);
 	bike_controls_frame();
 	gate_prev = gate;
 
@@ -906,6 +908,7 @@ void bike_frame_tick(void)
 	hud.generator_on = bike_generator_on();
 	hud.lost = have_sample && !link_up;
 	hud.watts = sig.power_w;
+	hud.no_power = sig.no_power;
 	hud.cadence = sig.cadence_rpm;
 	hud.effort_norm = sig.effort_norm;
 	hud.surge_meter = sig.surge_meter;
@@ -972,7 +975,8 @@ void bike_status(BikeStatus *out)
 	{
 		out->link = hud.link;
 		out->has_sample = have_sample;
-		out->power_valid = out->cadence_valid = have_sample;
+		out->cadence_valid = have_sample;
+		out->power_valid = have_sample && !hud.no_power;
 		out->watts = q16_round_uint(hud.watts);
 		out->rpm = q16_round_uint(hud.cadence);
 	}

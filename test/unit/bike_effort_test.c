@@ -558,6 +558,45 @@ static void check_surge_threshold(void)
 	}
 }
 
+/* A fresh sample without power invents no watts: effort, baseline and surge stay at zero, no surge starts
+ * (not even from a warmed-up, surging engine), moving still follows the cadence; power coming back restarts
+ * the baseline and the warm-up like the start of a ride. */
+static void check_no_power(void)
+{
+	BikeEffortConfig c;
+	BikeEffortState s;
+	BikeEffortInput in;
+	BikeEffortSignals out;
+	unsigned i, starts = 0, nonzero = 0;
+	int moving = 1;
+
+	warm_engine(&c, &s, 200, 300);
+	s.surging = true; /* as if a surge were running when the power reading disappears */
+	memset(&in, 0, sizeof in);
+	in.has_sample = in.link_up = true; /* power_valid stays false */
+	in.cadence_rpm = 90 * 65536;
+	for (i = 0; i < 60u * 1000000u / DT_US; ++i)
+	{
+		in.seq = 1000 + i;
+		bike_effort_step(&s, &c, DT_US, &in, &out);
+		starts += (out.events & BIKE_EV_SURGE_START) != 0;
+		nonzero += out.power_w != 0 || out.effort_w != 0 || out.effort_norm != 0 || out.baseline_w != 0 ||
+		           out.surge != 0 || out.surging;
+		if (i > 100)
+			moving &= out.moving;
+		if (!out.no_power)
+			nonzero++;
+	}
+	check(starts == 0 && nonzero == 0, "no power: effort, baseline, surge and power stay zero, no surge starts");
+	check(moving, "no power: moving still follows the cadence");
+	check(s.moving_time_us == 0 && s.baseline_w == 0, "no power: baseline and warm-up are held at the start");
+	in.power_valid = true;
+	in.power_w = 150 * 65536;
+	in.seq = 99999;
+	bike_effort_step(&s, &c, DT_US, &in, &out);
+	check(!out.no_power && out.power_w == 150 * 65536 && out.effort_w > 0, "no power: a power reading ends it");
+}
+
 static void check_surge_cue(void)
 {
 	const uint32_t dt = 28750u;
@@ -773,6 +812,7 @@ int main(int argc, char **argv)
 	check_feed_const();
 	check_surge_threshold();
 	check_surge_cue();
+	check_no_power();
 
 	sprintf(path, "%s/test/bike/effort/c_digests.txt", argv[1]);
 	dig_in = fopen(path, "rb");

@@ -722,13 +722,14 @@ static void hud_draw_power_gauge(const HudPanel *p, const BikeHud *b, int y)
 	const int avail = p->w - 2 * HUD_MARGIN;
 	const int span = avail - 2;
 	const bq16 scale = b->gauge_scale_w > 0 ? b->gauge_scale_w : 1;
-	const int frac = (int)MAX(0, MIN((int64_t)b->fast_w * 65536 / scale, 65536));
+	// No power reading: no fill and no threshold marker (the gauge is just the empty trough).
+	const int frac = b->no_power ? 0 : (int)MAX(0, MIN((int64_t)b->fast_w * 65536 / scale, 65536));
 	const int base = b->lost ? HUD_GAUGE_DIM_BASE : (b->surging ? HUD_SURGE_BASE : HUD_GAUGE_BASE);
 
 	HUD_ASSERT_FIT(p->surface, y - 1, 4);
 	hud_meter_bar(p->surface, HUD_MARGIN, y, avail, 3, frac, base);
 
-	if (!b->has_threshold)
+	if (!b->has_threshold || b->no_power)
 		return;
 	const int64_t t = MAX(0, MIN((int64_t)b->threshold_w * 65536 / scale, 65536));
 	const int mx = HUD_MARGIN + 1 + (int)((span - 1) * t >> 16);
@@ -745,7 +746,10 @@ static void hud_draw_bike(const HudPanel *p, int y)
 	char w_text[16], line[40];
 	bool held = false;
 
-	snprintf(w_text, sizeof w_text, "%uW", (unsigned)((b->watts + 32768) >> 16));
+	if (b->no_power)
+		snprintf(w_text, sizeof w_text, "no power");
+	else
+		snprintf(w_text, sizeof w_text, "%uW", (unsigned)((b->watts + 32768) >> 16));
 	snprintf(line, sizeof line, "%s %uRPM", w_text, (unsigned)((b->cadence + 32768) >> 16));
 	if (JE_textWidth(line, TINY_FONT) + 7 > avail)
 		snprintf(line, sizeof line, "%s %u", w_text, (unsigned)((b->cadence + 32768) >> 16));
