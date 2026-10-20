@@ -1,11 +1,12 @@
 #!/bin/sh
 # check_bike_effort.sh - build and run test/unit/bike_effort_test.c: the fixed-point
 # effort engine (src/bike_effort.c) and feed reader (src/bike_feed.c) against golden
-# output from Flywheel's real TypeScript engine (test/bike/golden), plus a
+# golden output (test/bike/effort/golden; feeds in test/bike/effort/feeds, both owned
+# by this repo; the first goldens were copied from Flywheel's TypeScript engine), plus a
 # determinism self-check against committed digests.  No SDL, no game data.
-# First it verifies that the vendored Flywheel files (feeds, goldens, protocol
-# tolerance fixtures, trace_to_feed.py) still match test/bike/VENDORED_FROM:
-# they are Flywheel's data, changed there and re-synced with tools/bike/vendor.py.
+# First it verifies that the vendored Flywheel files (the protocol fixtures) still
+# match test/bike/VENDORED_FROM: they are Flywheel's data, changed there and
+# re-synced with tools/bike/vendor.py.
 # regress.sh runs it with the other structural checks.
 #   tools/check_bike_effort.sh            run the check
 #   tools/check_bike_effort.sh --update   rewrite test/bike/golden/c_digests.txt

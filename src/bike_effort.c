@@ -3,9 +3,10 @@
  *
  * Port of Flywheel's game/src/core/effort/effort-engine.ts and
  * game/src/core/effort/filters.ts (Flywheel, MIT).  This is a
- * port: the TypeScript is the behavioural reference and the golden fixtures in
- * test/bike/golden (vendored from Flywheel's shared/conformance/effort) are
- * produced by running it.
+ * port: the TypeScript was the behavioural reference.  The golden files in
+ * test/bike/effort/golden started as a copy of what that engine produced; they
+ * and the feeds are now this repo's own test data (this engine, not Flywheel's,
+ * is the rule the game plays by).
  *
  * Arithmetic: values are Q16.16 in int32_t, time is microseconds, EMA state is
  * Q16, and the EMA coefficient is Q30.  Everything is integer, so the result is

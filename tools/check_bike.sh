@@ -4,7 +4,7 @@
 #   check_bike.sh BIN DATA_DIR OUT_DIR [--quick|--update]
 #
 # Every case runs a scripted level (--regress-script, fixed seed, no input) with a
-# scripted feed from test/bike/feeds (--regress-bike-feed) and compares frame hashes,
+# scripted feed from test/bike/effort/feeds (--regress-bike-feed) and compares frame hashes,
 # state hashes and the per-tick bike log:
 #   - flag off, and every toggle explicitly off, equal the stock baseline (frames
 #     and state hashes); a feed with the master or generator off leaves frames alone;
@@ -36,7 +36,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN=$1 DATA_DIR=$2 OUT=$3
 MODE=${4:-full}
 BASE="$ROOT/test/bike/regress.txt"
-FEEDS="$ROOT/test/bike/feeds"
+FEEDS="$ROOT/test/bike/effort/feeds"
 mkdir -p "$OUT"
 
 fail() { echo "FAIL bike-$1: $2"; exit 1; }

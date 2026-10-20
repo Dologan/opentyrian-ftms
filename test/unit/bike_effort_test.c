@@ -1,8 +1,8 @@
 /*
  * Unit test of the fixed-point effort engine (src/bike_effort.c) and the feed
- * reader (src/bike_feed.c) against golden output produced by Flywheel's real
- * TypeScript EffortEngine (Flywheel's shared/conformance/effort/gen_golden.mjs; the
- * outputs are vendored in test/bike/golden, see test/bike/VENDORED_FROM).  Built
+ * reader (src/bike_feed.c) against the golden files in test/bike/effort/golden
+ * (feeds in test/bike/effort/feeds; both owned by this repo; the goldens were first
+ * copied from the output of Flywheel's TypeScript EffortEngine).  Built
  * and run by tools/check_bike_effort.sh; needs no SDL and no game data.
  *
  * usage: bike_effort_test REPO_ROOT [--update-digests]
@@ -602,7 +602,7 @@ int main(int argc, char **argv)
 	if (update)
 		dig_out = fopen(path, "wb");
 
-	sprintf(path, "%s/test/bike/golden/manifest.txt", argv[1]);
+	sprintf(path, "%s/test/bike/effort/golden/manifest.txt", argv[1]);
 	man = fopen(path, "rb");
 	if (man == NULL)
 	{
@@ -624,14 +624,14 @@ int main(int argc, char **argv)
 			check(0, "case too long");
 			continue;
 		}
-		sprintf(path, "%s/test/bike/feeds/%s", argv[1], feed);
+		sprintf(path, "%s/test/bike/effort/feeds/%s", argv[1], feed);
 		if (!bike_feed_load(&bf, path))
 		{
 			printf("FAIL %s: cannot load feed %s\n", name, path);
 			++failures;
 			continue;
 		}
-		sprintf(path, "%s/test/bike/golden/%s.csv", argv[1], name);
+		sprintf(path, "%s/test/bike/effort/golden/%s.csv", argv[1], name);
 		if (!read_golden(path, gbuf, ticks))
 		{
 			printf("FAIL %s: cannot read golden %s\n", name, path);
