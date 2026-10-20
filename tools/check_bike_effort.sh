@@ -2,7 +2,7 @@
 # check_bike_effort.sh - build and run test/unit/bike_effort_test.c: the fixed-point
 # effort engine (src/bike_effort.c) and feed reader (src/bike_feed.c) against golden
 # golden output (test/bike/effort/golden; feeds in test/bike/effort/feeds, both owned
-# by this repo; the first goldens were copied from Flywheel's TypeScript engine), plus a
+# by this repo; the goldens are written by this engine, tools/bike/gen_effort_golden.sh), plus a
 # determinism self-check against committed digests.  No SDL, no game data.
 # First it verifies that the vendored Flywheel files (the protocol fixtures) still
 # match test/bike/VENDORED_FROM: they are Flywheel's data, changed there and

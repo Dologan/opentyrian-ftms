@@ -1,11 +1,17 @@
 /*
  * Unit test of the fixed-point effort engine (src/bike_effort.c) and the feed
  * reader (src/bike_feed.c) against the golden files in test/bike/effort/golden
- * (feeds in test/bike/effort/feeds; both owned by this repo; the goldens were first
- * copied from the output of Flywheel's TypeScript EffortEngine).  Built
+ * (feeds in test/bike/effort/feeds; both owned by this repo).  The goldens are
+ * written by this engine (tools/bike/gen_effort_golden.sh); they were first copied
+ * from the output of Flywheel's TypeScript EffortEngine and the C engine matched
+ * them within the tolerances below, which is what the port was held to.  Built
  * and run by tools/check_bike_effort.sh; needs no SDL and no game data.
  *
  * usage: bike_effort_test REPO_ROOT [--update-digests]
+ *        bike_effort_test REPO_ROOT --dump-effort FEED FTP_W [TICKS]   golden CSV to stdout
+ *        bike_effort_test REPO_ROOT --gen-golden [OUTDIR]              rewrite the goldens
+ * The last two are the golden generator (tools/bike/gen_effort_golden.sh): run it only
+ * after an intentional change of the engine, then review `git diff test/bike/effort`.
  *
  * Tolerances (fixed point vs the float reference):
  *   effort_w, baseline_w   +-(0.25 W + 0.2 %)
@@ -567,6 +573,135 @@ static void check_surge_cue(void)
 
 static Row cbuf[MAX_TICKS], gbuf[MAX_TICKS];
 
+/* ---- golden generator ---------------------------------------------------------
+ * Writes what this engine does for a feed, in the golden CSV format (columns
+ * tick,effort_w,effort_norm,moving,stale,surging,surge_meter,events,baseline_w,surge),
+ * from the very same run_case() the comparison above uses. */
+
+#define GOLDEN_TAIL_TICKS 400 /* silence after the last feed row, so the stop is in the golden */
+
+static void write_golden(FILE *f, const Row *rows, unsigned ticks)
+{
+	unsigned t;
+
+	fputs("tick,effort_w,effort_norm,moving,stale,surging,surge_meter,events,baseline_w,surge\n", f);
+	for (t = 0; t < ticks; ++t)
+	{
+		const Row *r = &rows[t];
+		fprintf(f, "%u,%.5f,%.6f,%d,%d,%d,%.6f,%d,%.5f,%.6f\n", t, r->effort_w, r->norm, r->moving,
+		        r->stale, r->surging, r->meter, r->events, r->baseline, r->surge);
+	}
+}
+
+/* ticks of a case: the last feed row plus the tail (a const: feed has no end: pass TICKS) */
+static unsigned golden_ticks(const BikeFeed *bf)
+{
+	if (bf->is_const || bf->count == 0)
+		return 0;
+	return bf->rows[bf->count - 1].tick + GOLDEN_TAIL_TICKS;
+}
+
+static int dump_effort(const char *feed, unsigned ftp, unsigned ticks)
+{
+	BikeFeed bf;
+
+	if (!bike_feed_load(&bf, feed))
+	{
+		fprintf(stderr, "cannot load feed %s\n", feed);
+		return 1;
+	}
+	if (ticks == 0)
+		ticks = golden_ticks(&bf);
+	if (ticks == 0 || ticks > MAX_TICKS)
+	{
+		fprintf(stderr, "give TICKS (1..%d) for this feed\n", MAX_TICKS);
+		bike_feed_free(&bf);
+		return 1;
+	}
+	run_case(&bf, ftp, ticks, cbuf);
+	write_golden(stdout, cbuf, ticks);
+	bike_feed_free(&bf);
+	return 0;
+}
+
+/* Reads REPO_ROOT/test/bike/effort/golden/manifest.txt for the cases (name feed ftp_w; its ticks
+ * column is recomputed) and writes the CSVs and the manifest into OUTDIR (default: that folder). */
+static int gen_golden(const char *root, const char *outdir)
+{
+	char path[1024], line[512], name[128], feed[128];
+	char names[64][128], feeds[64][128], dir[512];
+	unsigned ftps[64], tickv[64], n = 0, i, ftp, ticks;
+	FILE *man, *out;
+
+	if (strlen(outdir) >= sizeof dir)
+	{
+		fprintf(stderr, "OUTDIR is too long\n");
+		return 1;
+	}
+	strcpy(dir, outdir);
+	sprintf(path, "%s/test/bike/effort/golden/manifest.txt", root);
+	man = fopen(path, "rb");
+	if (man == NULL)
+	{
+		fprintf(stderr, "cannot open %s\n", path);
+		return 1;
+	}
+	while (n < 64 && fgets(line, sizeof line, man) != NULL)
+		if (sscanf(line, "%127s %127s %u %u", name, feed, &ftp, &ticks) == 4)
+		{
+			strcpy(names[n], name);
+			strcpy(feeds[n], feed);
+			ftps[n++] = ftp;
+		}
+	fclose(man);
+
+	for (i = 0; i < n; ++i)
+	{
+		BikeFeed bf;
+
+		sprintf(path, "%s/test/bike/effort/feeds/%s", root, feeds[i]);
+		if (!bike_feed_load(&bf, path))
+		{
+			fprintf(stderr, "cannot load feed %s\n", path);
+			return 1;
+		}
+		ticks = golden_ticks(&bf);
+		if (ticks == 0 || ticks > MAX_TICKS)
+		{
+			fprintf(stderr, "%s: no usable length\n", names[i]);
+			bike_feed_free(&bf);
+			return 1;
+		}
+		run_case(&bf, ftps[i], ticks, cbuf);
+		bike_feed_free(&bf);
+		tickv[i] = ticks;
+		sprintf(path, "%s/%s.csv", dir, names[i]);
+		out = fopen(path, "wb");
+		if (out == NULL)
+		{
+			fprintf(stderr, "cannot write %s\n", path);
+			return 1;
+		}
+		write_golden(out, cbuf, ticks);
+		fclose(out);
+	}
+	sprintf(path, "%s/manifest.txt", dir);
+	out = fopen(path, "wb");
+	if (out == NULL)
+	{
+		fprintf(stderr, "cannot write %s\n", path);
+		return 1;
+	}
+	fputs("# Effort golden data of this repo, generated from its own C engine by\n"
+	      "# tools/bike/gen_effort_golden.sh (run it only after an intentional engine change): do not edit.\n"
+	      "# columns: name feed ftp_w ticks\n", out);
+	for (i = 0; i < n; ++i)
+		fprintf(out, "%s %s %u %u\n", names[i], feeds[i], ftps[i], tickv[i]);
+	fclose(out);
+	printf("wrote %u goldens to %s\n", n, dir);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	char path[1024], line[512], name[128], feed[128];
@@ -580,8 +715,17 @@ int main(int argc, char **argv)
 
 	if (argc < 2)
 	{
-		printf("usage: bike_effort_test REPO_ROOT [--update-digests]\n");
+		printf("usage: bike_effort_test REPO_ROOT [--update-digests | --dump-effort FEED FTP_W [TICKS] | --gen-golden [OUTDIR]]\n");
 		return 2;
+	}
+	if (argc >= 5 && strcmp(argv[2], "--dump-effort") == 0)
+		return dump_effort(argv[3], (unsigned)strtoul(argv[4], NULL, 10), argc > 5 ? (unsigned)strtoul(argv[5], NULL, 10) : 0);
+	if (argc >= 3 && strcmp(argv[2], "--gen-golden") == 0)
+	{
+		char dir[1024];
+
+		sprintf(dir, "%s/test/bike/effort/golden", argv[1]);
+		return gen_golden(argv[1], argc > 3 ? argv[3] : dir);
 	}
 
 	check_alpha();
