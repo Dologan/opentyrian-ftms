@@ -9,7 +9,7 @@
 # re-synced with tools/bike/vendor.py.
 # regress.sh runs it with the other structural checks.
 #   tools/check_bike_effort.sh            run the check
-#   tools/check_bike_effort.sh --update   rewrite test/bike/golden/c_digests.txt
+#   tools/check_bike_effort.sh --update   rewrite test/bike/effort/c_digests.txt
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

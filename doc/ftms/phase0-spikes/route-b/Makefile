@@ -1,8 +1,10 @@
 # Spike build: strict C99.  `make test` / `make replay`
 CC ?= cc
 CFLAGS = -std=c99 -pedantic -Wall -Wextra -Werror -O2
-VECTORS ?= /home/user/flywheel/shared/fixtures/ftms-vectors.json
-RIDES ?= /home/user/flywheel/shared/fixtures/rides
+# FLYWHEEL_DIR: the Flywheel checkout (no default; set it before make test / make replay).
+FLYWHEEL_DIR ?=
+VECTORS ?= $(FLYWHEEL_DIR)/shared/fixtures/ftms-vectors.json
+RIDES ?= $(FLYWHEEL_DIR)/shared/fixtures/rides
 B = build
 
 all: $(B)/test_ftms_parse $(B)/replay_raw

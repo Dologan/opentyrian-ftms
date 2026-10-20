@@ -19,7 +19,7 @@
 #
 # Environment: FLYWHEEL_CLI (path to the Rust app's `flywheel-cli`; when set, `live` runs it
 #              instead of the Python bridge, e.g. $FLYWHEEL_DIR/app/target/debug/flywheel-cli),
-#              FLYWHEEL_DIR (Flywheel checkout for the Python bridge, default /home/user/flywheel),
+#              FLYWHEEL_DIR (Flywheel checkout for the Python bridge; no default),
 #              UV (default uv on PATH, else /root/.local/bin/uv), CC, BRIDGE_PORT (8791),
 #              BLACKHOLE_HOST (10.255.255.1; not routable in some networks - then
 #              the check still passes because it only asserts non-blocking behaviour).
@@ -27,7 +27,7 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CC="${CC:-cc}"
-FLYWHEEL_DIR="${FLYWHEEL_DIR:-/home/user/flywheel}"
+FLYWHEEL_DIR="${FLYWHEEL_DIR:-}"
 FLYWHEEL_CLI="${FLYWHEEL_CLI:-}"
 UV="${UV:-$(command -v uv 2>/dev/null || echo /root/.local/bin/uv)}"
 PORT="${BRIDGE_PORT:-8791}"
@@ -113,8 +113,8 @@ for t in "$@"; do
 				continue
 			fi
 			echo "live: against $FLYWHEEL_CLI"
-		elif [ ! -d "$FLYWHEEL_DIR/bridge" ]; then
-			echo "SKIP live: no Flywheel checkout at $FLYWHEEL_DIR (set FLYWHEEL_CLI or FLYWHEEL_DIR)"
+		elif [ -z "$FLYWHEEL_DIR" ] || [ ! -d "$FLYWHEEL_DIR/bridge" ]; then
+			echo "SKIP live: no Flywheel checkout (set FLYWHEEL_CLI or FLYWHEEL_DIR)"
 			continue
 		fi
 		start_bridge || { rc=1; continue; }

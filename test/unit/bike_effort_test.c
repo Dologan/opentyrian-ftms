@@ -26,7 +26,7 @@
  *
  * Determinism: every case is run twice; the digest of all per-tick outputs and
  * of the final state must be identical, and equal to the committed value in
- * test/bike/golden/c_digests.txt (so other platforms/compilers must agree).
+ * test/bike/effort/c_digests.txt (so other platforms/compilers must agree).
  */
 #include "../../src/bike_effort.h"
 #include "../../src/bike_feed.h"
@@ -774,7 +774,7 @@ int main(int argc, char **argv)
 	check_surge_threshold();
 	check_surge_cue();
 
-	sprintf(path, "%s/test/bike/golden/c_digests.txt", argv[1]);
+	sprintf(path, "%s/test/bike/effort/c_digests.txt", argv[1]);
 	dig_in = fopen(path, "rb");
 	if (dig_in != NULL)
 	{

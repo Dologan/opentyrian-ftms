@@ -7,7 +7,7 @@
 #
 # Run it ONLY after an intentional change of the engine or of its defaults, then review
 # `git diff test/bike/effort` (every changed golden must be a case the change should touch),
-# run `tools/check_bike_effort.sh --update` for test/bike/golden/c_digests.txt and
+# run `tools/check_bike_effort.sh --update` for test/bike/effort/c_digests.txt and
 # `tools/check_bike.sh BIN DATA OUT --update` for the game-level digests.  The case list
 # (name, feed, FTP) is the manifest's; its ticks column is recomputed (last feed row + 400).
 # One case: bike_effort_test ROOT --dump-effort FEED FTP_W [TICKS]  (CSV to stdout).
