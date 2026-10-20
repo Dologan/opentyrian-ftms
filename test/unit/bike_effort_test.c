@@ -26,6 +26,7 @@
 #include "../../src/bike_feed.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -334,6 +335,234 @@ static void check_feed_const(void)
 	check(!bike_feed_load(&f, "const:abc"), "const: rejects garbage");
 }
 
+
+/* ---- surge threshold, gauge scale, start cue --------------------------------- */
+
+/* A warmed-up, moving engine at `ftp`, built by running the real step for 40 s at 90 rpm and `watts`. */
+static void warm_engine(BikeEffortConfig *c, BikeEffortState *s, unsigned ftp, unsigned watts)
+{
+	BikeEffortInput in;
+	BikeEffortSignals out;
+	unsigned i;
+
+	bike_effort_config_default(c, ftp);
+	bike_effort_init(s, c);
+	memset(&in, 0, sizeof in);
+	in.has_sample = in.link_up = in.power_valid = true;
+	in.power_w = (bq16)(watts * 65536);
+	in.cadence_rpm = 90 * 65536;
+	for (i = 0; i < 40u * 1000000u / DT_US; ++i)
+	{
+		in.seq = i;
+		bike_effort_step(s, c, DT_US, &in, &out);
+	}
+}
+
+/* Does the real detector start a surge when the smoothed power is `fast` over `baseline`?  dt = 0 leaves both
+ * EMAs untouched; with a hold of 1 us and a candidate time of 1 us, a qualifying step keeps it at 1 (event) and
+ * any other step resets it to 0 (no event). */
+static int detector_starts(const BikeEffortConfig *base, const BikeEffortState *warm, bq16 baseline, bq16 fast)
+{
+	BikeEffortConfig c = *base;
+	BikeEffortState s = *warm;
+	BikeEffortInput in;
+	BikeEffortSignals out;
+
+	c.surge_hold_us = 1;
+	s.surging = false;
+	s.surge_cand_us = 1;
+	s.baseline_w = baseline;
+	s.fast_w = fast;
+	memset(&in, 0, sizeof in);
+	in.has_sample = in.link_up = in.power_valid = true;
+	in.seq = s.last_seq;
+	in.power_w = fast;
+	in.cadence_rpm = 90 * 65536;
+	bike_effort_step(&s, &c, 0, &in, &out);
+	return (out.events & BIKE_EV_SURGE_START) != 0;
+}
+
+static void check_surge_threshold(void)
+{
+	static const unsigned ftps[] = { 50, 137, 200, 250, 500 };
+	static const bq16 mins[] = { 39322, 52429 };   /* 0.6 (default), 0.8: the min-pct floor binds at a low baseline */
+	static const bq16 ratios[] = { 78643, 98304 }; /* 1.2 (default), 1.5 */
+	BikeEffortConfig c, w;
+	BikeEffortState s, ws;
+	bq16 t = 0;
+	unsigned a, b, r, k;
+	long bad = 0, tried = 0;
+
+	/* 1. before the warm-up and while not moving there is no threshold (the detector cannot qualify either) */
+	warm_engine(&c, &s, 200, 150);
+	check(s.moving && s.moving_time_us >= c.surge_warmup_us, "threshold: the engine warmed up and is moving");
+	check(bike_surge_threshold(&s, &c, &t), "threshold: exists once warmed up and moving");
+	ws = s;
+	ws.moving_time_us = c.surge_warmup_us - 1;
+	t = 1234;
+	check(!bike_surge_threshold(&ws, &c, &t) && t == 1234, "threshold: none one microsecond before the warm-up");
+	ws.moving_time_us = c.surge_warmup_us;
+	check(bike_surge_threshold(&ws, &c, &t), "threshold: present exactly at the warm-up");
+	ws = s;
+	ws.moving = false;
+	t = 1234;
+	check(!bike_surge_threshold(&ws, &c, &t) && t == 1234, "threshold: none when not moving");
+	{
+		BikeEffortState fresh;
+		bike_effort_init(&fresh, &c);
+		check(!bike_surge_threshold(&fresh, &c, &t), "threshold: none on a fresh engine");
+	}
+
+	/* 2. values, FTP 200 W: floor 100 W, min-pct 0.6 -> 120 W, ratio 1.2 */
+	bike_effort_config_default(&c, 200);
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 120 * 65536) <= 256, "threshold: at the baseline floor it is 120 W (min-pct = ratio * floor)");
+	check(bike_surge_threshold_w(&c, 40 * 65536) == bike_surge_threshold_w(&c, 100 * 65536),
+	      "threshold: a baseline below the floor is floored like the detector's");
+	check(bike_surge_threshold_w(&c, 0) == bike_surge_threshold_w(&c, 100 * 65536), "threshold: baseline 0 is floored");
+	check(abs(bike_surge_threshold_w(&c, 200 * 65536) - 240 * 65536) <= 256, "threshold: a high baseline gives ratio * baseline (240 W)");
+	check(abs(bike_surge_threshold_w(&c, 150 * 65536) - 180 * 65536) <= 256, "threshold: 150 W baseline gives 180 W");
+	c.surge_min_pct = 52429; /* 0.8: the min-pct floor of 160 W binds below a 133.3 W baseline */
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 160 * 65536) <= 256, "threshold: below the min-pct floor it is min_pct * ftp (160 W)");
+	check(abs(bike_surge_threshold_w(&c, 120 * 65536) - 160 * 65536) <= 256, "threshold: 120 W baseline still on the min-pct floor");
+	check(abs(bike_surge_threshold_w(&c, 140 * 65536) - 168 * 65536) <= 256, "threshold: 140 W baseline is on the ratio side (168 W)");
+	bike_effort_config_default(&c, 200);
+	check(bike_surge_threshold_w(&c, INT32_MAX) == INT32_MAX, "threshold: saturates instead of overflowing");
+
+	/* 3. exactness against the real detector: the threshold is the first smoothed power that starts a surge */
+	for (a = 0; a < sizeof ftps / sizeof ftps[0]; ++a)
+		for (b = 0; b < sizeof mins / sizeof mins[0]; ++b)
+			for (r = 0; r < sizeof ratios / sizeof ratios[0]; ++r)
+			{
+				warm_engine(&w, &ws, ftps[a], 150);
+				w.surge_min_pct = mins[b];
+				w.surge_ratio = ratios[r];
+				for (k = 0; k < 40; ++k)
+				{
+					const bq16 base = (bq16)((int64_t)ftps[a] * 65536 * k / 12 + (int64_t)k * 7919);
+					const bq16 fl = (bq16)((int64_t)ftps[a] * w.baseline_floor_pct);
+					const bq16 floored = base > fl ? base : fl;
+					const bq16 thr = bike_surge_threshold_w(&w, base);
+
+					++tried;
+					if (!detector_starts(&w, &ws, floored, thr) || detector_starts(&w, &ws, floored, thr - 1) ||
+					    bike_surge_threshold_w(&w, floored) != thr)
+					{
+						if (bad++ < 5)
+							printf("  mismatch ftp %u min %d ratio %d base %ld thr %ld\n", ftps[a], (int)mins[b], (int)ratios[r], (long)base, (long)thr);
+					}
+				}
+			}
+	printf("surge threshold: %ld baselines x configs against the detector, %ld mismatches\n", tried, bad);
+	check(bad == 0, "threshold: equals the first smoothed power at which the detector starts a surge");
+
+	/* 4. along a real run: the candidate time runs exactly while the threshold exists and fast >= threshold,
+	 *    and a start event only happens at or above the threshold (the marker cannot disagree with the detector) */
+	{
+		BikeEffortInput in;
+		BikeEffortSignals out;
+		unsigned i, starts = 0, agree = 0;
+		long disagree = 0;
+
+		bike_effort_config_default(&c, 230);
+		bike_effort_init(&s, &c);
+		memset(&in, 0, sizeof in);
+		in.has_sample = in.link_up = in.power_valid = true;
+		in.cadence_rpm = 90 * 65536;
+		for (i = 0; i < 160u * 1000000u / DT_US; ++i)
+		{
+			const unsigned sec = (unsigned)((uint64_t)i * DT_US / 1000000u);
+			const unsigned watts = ((sec >= 60 && sec < 80) || (sec >= 120 && sec < 140)) ? 330 : 150;
+			bq16 thr = 0;
+			int above;
+
+			in.seq = i;
+			in.power_w = (bq16)(watts * 65536);
+			bike_effort_step(&s, &c, DT_US, &in, &out);
+			above = bike_surge_threshold(&s, &c, &thr) && s.fast_w >= thr;
+			if (thr != 0 && thr != bike_surge_threshold_w(&c, out.baseline_w))
+				++disagree; /* the signals' floored baseline gives the same threshold as the state's */
+			if (out.events & BIKE_EV_SURGE_START)
+			{
+				++starts;
+				if (!above)
+					++disagree;
+			}
+			if (!s.surging && !(out.events & BIKE_EV_SURGE_START))
+			{
+				if ((s.surge_cand_us > 0) != (above != 0))
+					++disagree;
+				else
+					++agree;
+			}
+		}
+		printf("surge threshold: along a ride %u starts, %u candidate checks agree, %ld disagree\n", starts, agree, disagree);
+		check(starts == 2, "threshold ride: two surges started");
+		check(disagree == 0, "threshold ride: the marker and the detector never disagree");
+	}
+
+	/* 5. gauge scale: max(1.5 * ftp, 1.25 * threshold) */
+	bike_effort_config_default(&c, 200);
+	check(bike_surge_gauge_scale_w(&c, false, 999 * 65536) == 300 * 65536, "scale: 1.5 x FTP without a threshold (threshold ignored)");
+	check(bike_surge_gauge_scale_w(&c, true, 120 * 65536) == 300 * 65536, "scale: 1.5 x FTP while 1.25 x threshold is lower");
+	check(bike_surge_gauge_scale_w(&c, true, 240 * 65536) == 300 * 65536, "scale: tie at a 240 W threshold");
+	check(bike_surge_gauge_scale_w(&c, true, 400 * 65536) == 500 * 65536, "scale: 1.25 x threshold when that is larger");
+	{
+		bq16 thr = 0;
+		warm_engine(&c, &s, 200, 400); /* a high baseline pushes the threshold past 1.2 x FTP */
+		check(bike_surge_threshold(&s, &c, &thr) && thr <= bike_surge_gauge_scale_w(&c, true, thr), "scale: the marker is always on the scale");
+	}
+}
+
+static void check_surge_cue(void)
+{
+	const uint32_t dt = 28750u;
+	uint32_t rem = 0, t = 0, lit = 0, flashes = 0;
+	int prev = 0;
+
+	check(!bike_surge_cue_lit(0), "cue: not lit when idle");
+	check(bike_surge_cue_step(0, dt, 0, false) == 0, "cue: stays idle without a start");
+	check(bike_surge_cue_step(0, dt, 0, true) == 0, "cue: a surge already running does not start a cue");
+	rem = bike_surge_cue_step(0, dt, BIKE_EV_SURGE_START, true);
+	check(rem == BIKE_SURGE_CUE_US && bike_surge_cue_lit(rem), "cue: SURGE_START sets 1.5 s and starts lit");
+	/* count it down in gameplay time (frame dt), as bike.c does */
+	while (rem > 0 && t < 3000000u)
+	{
+		const int l = bike_surge_cue_lit(rem);
+		if (l)
+			++lit;
+		if (l && !prev)
+			++flashes;
+		prev = l;
+		rem = bike_surge_cue_step(rem, dt, 0, true);
+		t += dt;
+	}
+	printf("surge cue: ran %u us in %u us frames, lit %u frames, %u flashes\n", (unsigned)t, (unsigned)dt, (unsigned)lit, (unsigned)flashes);
+	check(t >= BIKE_SURGE_CUE_US && t < BIKE_SURGE_CUE_US + dt, "cue: lasts 1.5 s of summed frame time");
+	check(flashes == 3, "cue: three flashes");
+	/* frame-rate independent: 1 ms frames and 100 ms frames light about the same total time */
+	{
+		const uint32_t dts[2] = { 1000u, 100000u };
+		uint32_t n, lit_us[2] = { 0, 0 };
+
+		for (n = 0; n < 2; ++n)
+		{
+			rem = bike_surge_cue_step(0, dts[n], BIKE_EV_SURGE_START, true);
+			while (rem > 0)
+			{
+				if (bike_surge_cue_lit(rem))
+					lit_us[n] += dts[n];
+				rem = bike_surge_cue_step(rem, dts[n], 0, true);
+			}
+		}
+		check(lit_us[0] >= 740000u && lit_us[0] <= 760000u && lit_us[1] >= 600000u && lit_us[1] <= 900000u,
+		      "cue: about 0.75 s lit in total whatever the frame rate");
+	}
+	check(bike_surge_cue_step(1000000u, dt, BIKE_EV_SURGE_END, false) == 0, "cue: ends when the surge ends");
+	check(bike_surge_cue_step(100u, dt, 0, true) == 0, "cue: the last frame saturates at 0");
+	check(bike_surge_cue_step(100000u, dt, BIKE_EV_SURGE_START, true) == BIKE_SURGE_CUE_US, "cue: a new start restarts it");
+	check(!bike_surge_cue_lit(BIKE_SURGE_CUE_US + 1), "cue: out-of-range remaining time is not lit");
+}
+
 /* ---- main ------------------------------------------------------------------- */
 
 static Row cbuf[MAX_TICKS], gbuf[MAX_TICKS];
@@ -359,6 +588,8 @@ int main(int argc, char **argv)
 	check_norm();
 	check_parse();
 	check_feed_const();
+	check_surge_threshold();
+	check_surge_cue();
 
 	sprintf(path, "%s/test/bike/golden/c_digests.txt", argv[1]);
 	dig_in = fopen(path, "rb");

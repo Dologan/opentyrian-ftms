@@ -361,6 +361,67 @@ static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t
 	*baseline_out = baseline;
 }
 
+/* ---- surge threshold, gauge scale, start cue ------------------------------- */
+
+/* The detector's test is  round_div(fast * Q, base) >= surge_ratio  (ratio_of), i.e.
+ * (fast * Q + base / 2) / base >= R  <=>  fast >= ceil((R * base - base / 2) / Q),  and
+ * fast >= surge_min_pct * ftp.  Both are exact integers, so the marker sits on the first
+ * value of fast that qualifies; test/unit/bike_effort_test.c checks it against ratio_of. */
+bq16 bike_surge_threshold_w(const BikeEffortConfig *c, bq16 baseline)
+{
+	const bq16 floor_w = baseline_floor(c);
+	const int64_t base = (baseline > floor_w) ? baseline : floor_w;
+	const int64_t min_w = (int64_t)c->surge_min_pct * c->ftp_w;
+	int64_t ratio_w;
+
+	if (base <= 0)
+		ratio_w = (c->surge_ratio <= 0) ? 0 : INT32_MAX; /* ratio_of() is 0: only a ratio <= 0 passes */
+	else
+	{
+		const int64_t need = (int64_t)c->surge_ratio * base - base / 2;
+		ratio_w = need <= 0 ? 0 : (need + Q - 1) / Q;
+	}
+	return to_bq16(ratio_w > min_w ? ratio_w : min_w);
+}
+
+bool bike_surge_threshold(const BikeEffortState *s, const BikeEffortConfig *c, bq16 *threshold_w)
+{
+	if (!s->moving || s->moving_time_us < c->surge_warmup_us)
+		return false;
+	*threshold_w = bike_surge_threshold_w(c, s->baseline_w);
+	return true;
+}
+
+bq16 bike_surge_gauge_scale_w(const BikeEffortConfig *c, bool has_threshold, bq16 threshold_w)
+{
+	const int64_t ftp_scale = ((int64_t)c->ftp_w * Q * BIKE_GAUGE_FTP_MULT_Q16 + Q / 2) / Q;
+	int64_t scale = ftp_scale;
+
+	if (has_threshold)
+	{
+		const int64_t thr_scale = round_div((int64_t)threshold_w * BIKE_GAUGE_THR_MULT_Q16, Q);
+		if (thr_scale > scale)
+			scale = thr_scale;
+	}
+	return to_bq16(scale < 1 ? 1 : scale);
+}
+
+uint32_t bike_surge_cue_step(uint32_t remaining_us, uint32_t dt_us, uint8_t events, bool surging)
+{
+	if (events & BIKE_EV_SURGE_START)
+		return BIKE_SURGE_CUE_US;
+	if (!surging)
+		return 0;
+	return remaining_us > dt_us ? remaining_us - dt_us : 0;
+}
+
+bool bike_surge_cue_lit(uint32_t remaining_us)
+{
+	if (remaining_us == 0 || remaining_us > BIKE_SURGE_CUE_US)
+		return false;
+	return ((BIKE_SURGE_CUE_US - remaining_us) / BIKE_SURGE_CUE_FLASH_US) % 2u == 0;
+}
+
 /* ---- step ----------------------------------------------------------------- */
 
 void bike_effort_step(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt_us,

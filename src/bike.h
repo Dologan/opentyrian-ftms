@@ -79,6 +79,14 @@ typedef struct
 	bool gate, generator_on, lost;
 	bq16 watts, cadence, effort_norm, surge_meter;
 	bool surging, autofire_on, autofire_held;
+	/* Power gauge: the smoothed power the surge test uses, the gauge's full scale, and the smoothed power
+	 * at which a surge would start (bike_surge_threshold_w(); has_threshold is false before the warm-up
+	 * or when not moving).  All Q16 watts. */
+	bq16 fast_w, gauge_scale_w, threshold_w;
+	bool has_threshold;
+	/* Surge-start cue: gameplay time left (us), and whether it is in a lit flash phase now. */
+	uint32_t cue_us;
+	bool cue_lit;
 } BikeHud;
 
 extern BikeSettings bike_settings; /* edited by menus; read every frame, never cached */

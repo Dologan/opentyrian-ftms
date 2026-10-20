@@ -46,6 +46,8 @@ static bool eff_ready = false;
 static uint32_t eff_cfg_ftp = 0;
 static BikeEffortSignals sig;
 static BikeHud hud;
+/* Surge-start cue timer.  Presentation only: not in any digest, not read by the rules. */
+static uint32_t surge_cue_us = 0;
 
 static uint64_t clock_us = 0;
 static uint32_t tick_count = 0;
@@ -690,6 +692,7 @@ void bike_level_start(void)
 {
 	refresh_rider_ftp();
 	level_active = true;
+	surge_cue_us = 0;
 	bike_rules_level_start();
 }
 
@@ -697,6 +700,7 @@ void bike_level_end(void)
 {
 	level_active = false;
 	gate_prev = false;
+	surge_cue_us = 0;
 }
 
 /* ---- gate ---------------------------------------------------------------- */
@@ -827,6 +831,8 @@ void bike_frame_tick(void)
 	else
 		memset(&sig, 0, sizeof sig);
 
+	surge_cue_us = bike_surge_cue_step(surge_cue_us, last_dt_us, sig.events, sig.surging);
+
 	bike_rules_frame(&sig, link_up && have_sample, bike_generator_on(), last_dt_us);
 	bike_controls_frame();
 	gate_prev = gate;
@@ -843,6 +849,14 @@ void bike_frame_tick(void)
 	hud.surging = sig.surging;
 	hud.autofire_on = bike_autofire_active();
 	hud.autofire_held = bike_autofire_held_back();
+	if (source != BIKE_SOURCE_OFF)
+	{
+		hud.fast_w = eff_state.fast_w;
+		hud.has_threshold = bike_surge_threshold(&eff_state, &eff_cfg, &hud.threshold_w);
+		hud.gauge_scale_w = bike_surge_gauge_scale_w(&eff_cfg, hud.has_threshold, hud.threshold_w);
+		hud.cue_us = surge_cue_us;
+		hud.cue_lit = bike_surge_cue_lit(surge_cue_us);
+	}
 
 	if (calib_path != NULL && gate)
 		calib_row();

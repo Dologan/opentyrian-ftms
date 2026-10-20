@@ -673,10 +673,24 @@ static void hud_draw_generator(const HudPanel *p, int pi, int y)
 // Bike readout (exercise-bike integration, presentation only).  Drawn above the
 // generator name of the 1-player status panel while the master switch and the
 // Bike HUD setting are on (bike_hud_visible()): link dot + watts + cadence, an
-// effort bar, a surge meter and an AUTO / SURGE row.  It reads bike_hud() and
-// never writes game state, settings or the RNG.
+// power gauge with the surge-start marker, an effort bar, a surge meter and an
+// AUTO / SURGE row.  It reads bike_hud() and never writes game state, settings
+// or the RNG.  Rows (relative to the top): gauge 1..3 with its marker 0..3,
+// text 5..10, effort 13..15, surge meter 17..19, flags 21..26.  The gauge sits
+// on top so that every row that was already there keeps its place.
 // ---------------------------------------------------------------------------
-#define BIKE_HUD_H 24   // rows reserved above the generator name (22 drawn, 2 px gap)
+#define BIKE_HUD_H 29   // rows reserved above the generator name (27 drawn, 2 px gap)
+
+// The surge colour (palette block of the surge meter) and, for the start cue,
+// the text colour it flashes in.
+#define HUD_SURGE_BASE   112
+#define HUD_SURGE_BANK   7
+#define HUD_SURGE_BRIGHT 4
+// Gauge: fill hue normally, and the greys used for the marker and for a lost link.
+#define HUD_GAUGE_BASE      144
+#define HUD_GAUGE_DIM_BASE  0
+#define HUD_MARK_IDLE       11
+#define HUD_MARK_READY      15
 
 // Trough plus a value ramp within the hue block starting at `base`, like
 // hud_progress_bar().  `frac` is Q16 (65536 == full).
@@ -697,6 +711,33 @@ static void hud_meter_bar(SDL_Surface *surface, int x, int y, int w, int h, int 
 	}
 }
 
+// Power gauge (`y` is its top row; the tick rises one row above it): the
+// smoothed power (fast_w) against a scale that ends past FTP and past the
+// surge threshold, and a tick at the watts where a surge would start
+// (bike_surge_threshold_w(), computed by the engine, not here).  The fill takes
+// the surge colour while surging; the tick turns white and two pixels wide once
+// the smoothed power has reached it (about to surge, or surging).
+static void hud_draw_power_gauge(const HudPanel *p, const BikeHud *b, int y)
+{
+	const int avail = p->w - 2 * HUD_MARGIN;
+	const int span = avail - 2;
+	const bq16 scale = b->gauge_scale_w > 0 ? b->gauge_scale_w : 1;
+	const int frac = (int)MAX(0, MIN((int64_t)b->fast_w * 65536 / scale, 65536));
+	const int base = b->lost ? HUD_GAUGE_DIM_BASE : (b->surging ? HUD_SURGE_BASE : HUD_GAUGE_BASE);
+
+	HUD_ASSERT_FIT(p->surface, y - 1, 4);
+	hud_meter_bar(p->surface, HUD_MARGIN, y, avail, 3, frac, base);
+
+	if (!b->has_threshold)
+		return;
+	const int64_t t = MAX(0, MIN((int64_t)b->threshold_w * 65536 / scale, 65536));
+	const int mx = HUD_MARGIN + 1 + (int)((span - 1) * t >> 16);
+	const bool ready = !b->lost && b->fast_w >= b->threshold_w;
+	const int mx2 = ready ? MIN(mx + 1, HUD_MARGIN + avail - 2) : mx;
+	fill_rectangle_xy(p->surface, ready ? MIN(mx, mx2 - 1) : mx, y - 1, mx2, y + 2,
+	                  (Uint8)(ready ? HUD_MARK_READY : HUD_MARK_IDLE));
+}
+
 static void hud_draw_bike(const HudPanel *p, int y)
 {
 	const BikeHud *b = bike_hud();
@@ -711,18 +752,24 @@ static void hud_draw_bike(const HudPanel *p, int y)
 	if (JE_textWidth(line, TINY_FONT) + 7 > avail)
 		snprintf(line, sizeof line, "%s", w_text);
 
-	// Row 1: link dot, then watts and cadence (dim while the link is lost).
+	// Row 1: the power gauge with the surge marker (above the text, so the rows below keep their
+	// place), then, 5 rows down, the link dot, watts and cadence (dim while the link is lost).
+	hud_draw_power_gauge(p, b, y + 1);
+	y += 5;
 	const int content_w = 4 + 3 + JE_textWidth(line, TINY_FONT);
 	const int x = hud_start(p, content_w);
 	HUD_ASSERT_FIT(p->surface, y, 6);
 	fill_rectangle_xy(p->surface, x, y + 1, x + 3, y + 4, (Uint8)bike_link_color(b->link, b->lost));
-	hud_text(p->surface, x + 7, y, line, HUD_VALUE_BANK, b->lost ? HUD_LABEL_DIM : HUD_VALUE_BRIGHT);
+	// The surge-start cue (BIKE_SURGE_CUE_US) flashes the readout in the surge colour.
+	const bool cue = b->cue_lit && !b->lost;
+	hud_text(p->surface, x + 7, y, line, cue ? HUD_SURGE_BANK : HUD_VALUE_BANK,
+	         cue ? HUD_SURGE_BRIGHT : (b->lost ? HUD_LABEL_DIM : HUD_VALUE_BRIGHT));
 
 	// Rows 2 and 3: effort (green) and surge meter (red to yellow).
 	hud_meter_bar(p->surface, HUD_MARGIN, y + 8, avail, 3, b->effort_norm, 192);
-	hud_meter_bar(p->surface, HUD_MARGIN, y + 12, avail, 3, b->surge_meter, 112);
+	hud_meter_bar(p->surface, HUD_MARGIN, y + 12, avail, 3, b->surge_meter, HUD_SURGE_BASE);
 
-	// Row 4: AUTO (HOLD while held back) and SURGE.
+	// Row 4: AUTO (HOLD while held back) and SURGE (flashing during the cue).
 	const bool autofire = bike_autofire_state(&held);
 	char flags[24] = "";
 	if (autofire)
@@ -733,8 +780,9 @@ static void hud_draw_bike(const HudPanel *p, int y)
 	{
 		char out[32];
 		hud_truncate(out, sizeof out, flags, avail);
-		hud_text(p->surface, hud_start(p, JE_textWidth(out, TINY_FONT)), y + 16, out, HUD_VALUE_BANK,
-		         (autofire && held) ? HUD_LABEL_DIM : HUD_VALUE_BRIGHT);
+		hud_text(p->surface, hud_start(p, JE_textWidth(out, TINY_FONT)), y + 16, out,
+		         cue ? HUD_SURGE_BANK : HUD_VALUE_BANK,
+		         cue ? HUD_SURGE_BRIGHT : ((autofire && held) ? HUD_LABEL_DIM : HUD_VALUE_BRIGHT));
 	}
 }
 

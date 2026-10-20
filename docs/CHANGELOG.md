@@ -11,6 +11,13 @@ Conventions:
 
 ---
 
+## 2026-10-20
+
+### Bike (FTMS): surge-start cue and power gauge
+- **Cue:** 1.5 s of gameplay time of flashing watts and SURGE label after a surge starts (Modern), watts colour only (Classic). Presentation only, not in any digest.
+- **Gauge:** Modern HUD shows the smoothed power with a marker at the surge threshold from `bike_surge_threshold_w()`; details in MODERNIZATION.md section 4.14. `BIKE_HUD_H` 24 to 29.
+- **Digests:** only the Modern HUD snapshots changed (`snap-hud-modern`, `snap-hud-surge`, `snap-hud-touch`).
+
 ## 2026-10-14
 
 ### Bike (FTMS): code review fixes (T5.1)
