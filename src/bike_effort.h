@@ -33,7 +33,7 @@ typedef struct
 	bq16 moving_on_rpm, moving_off_rpm;                                /* 25, 15 */
 	uint32_t moving_grace_us, silent_stop_us, start_confirm_us;        /* 1.5 s, 3 s, 0.25 s */
 	uint32_t effort_tau_us, fast_tau_us, baseline_tau_us;              /* 3 s, 1.5 s, 75 s */
-	bq16 baseline_floor_pct, surge_ratio, surge_min_pct;               /* .5, 1.2, .6 */
+	bq16 baseline_floor_pct, surge_ratio, surge_min_pct;               /* .5, 1.2, .8 */
 	uint32_t surge_hold_us, surge_exit_us, surge_fill_us, surge_warmup_us; /* 2, 1, 8, 30 s */
 	bq16 coast_max_rpm, coast_drop_frac;                               /* 45, .35 */
 	uint32_t coast_window_us;                                          /* 5 s */

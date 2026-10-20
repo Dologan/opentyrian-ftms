@@ -13,6 +13,14 @@ Conventions:
 
 ## 2026-10-20
 
+### Bike (FTMS): the surge rule is the fork's own; surge keys; 80 % default
+- **Why:** effort and surge are game mechanics, so each game owns them. Flywheel moved its effort data into its web game (its `a34faa5`) and no longer shares it. This fork stops depending on Flywheel for effort data.
+- **Test data:** the feeds and goldens moved from the vendored `test/bike/feeds` and `test/bike/golden` to the fork-owned `test/bike/effort/{feeds,golden}` (copied unchanged). `vendor.py` now vendors only the protocol fixtures (`test/bike/protocol/{tolerance,rider}`, 53 files); `trace_to_feed.py` was removed here (nothing uses it; it stays in Flywheel). `test/bike/golden/c_digests.txt` stays where it was.
+- **Generator:** `tools/bike/gen_effort_golden.sh` rebuilds the goldens from this repo's C engine (`--gen-golden`, `--dump-effort` in `test/unit/bike_effort_test.c`). On the unchanged engine it reproduced the copied TypeScript goldens within the tolerances on all 14 cases (worst effort_w 0.002 W, norm 0.00003, meter 0.00002, surge 0.00005, same transition and event ticks), so the goldens are now its output. Run it only after an intentional engine change.
+- **Surge rule:** `surge_min_pct` default 60 % to 80 % of the FTP; `surge_ratio` stays 1.20. Both are now `[ftms]` keys (`surge_ratio` 1.05 to 2.00 step 0.05, `surge_min_pct` 0 to 100 step 5) with two Bike menu rows, "Surge Ratio" (`1.20x`) and "Surge Min Power" (`80 %`); the menu has 21 rows. The detector, the HUD threshold marker and the gauge scale all read the configured values.
+- **Goldens that changed** (all surge cases): `ramp0_300`, `surge_ftp500`, `nopower`, `q200b-ride1`, `q200b-ride2` (the surging, surge meter, events and surge columns; the baseline column too, because it adapts slower while surging; effort and moving columns are unchanged).
+- **Bike digests that changed** (rides that surge between 60 % and 80 % of the FTP, at FTP 200): `ramp`, `ftpm200`, `ftpman`, `ftpmid`, `ftpintman`, `ftpintmid`, `ride1`, `ride2`, `sgride`, `sgride0`. New: `sgmin80`, `sgmin60`, `sgr200`, `sgr105`, `snap-menu-surge`. No snapshot digest changed (menu, HUD) and no 2.1 baseline.
+
 ### Bike (FTMS): surge-start cue and power gauge
 - **Cue:** 1.5 s of gameplay time of flashing watts and SURGE label after a surge starts (Modern), watts colour only (Classic). Presentation only, not in any digest.
 - **Gauge:** Modern HUD shows the smoothed power with a marker at the surge threshold from `bike_surge_threshold_w()`; details in MODERNIZATION.md section 4.14. `BIKE_HUD_H` 24 to 29.

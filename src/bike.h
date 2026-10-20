@@ -21,6 +21,8 @@ typedef struct
 {
 	bool master, generator, hud;
 	bool surge_superbomb, surge_sidekick, surge_special, surge_shield;
+	uint16_t surge_ratio_x100; /* 105..200 in steps of 5, default 120: the surge starts at this multiple of the baseline */
+	uint8_t surge_min_pct;     /* 0..100 in steps of 5, default 80: and at this percent of the FTP at least */
 	bool autofire;
 	uint8_t autofire_reserve_pct; /* 0|25|50 */
 	int autofire_key, autofire_key2; /* SDL_Scancode values */
@@ -46,6 +48,10 @@ typedef struct
 #define BIKE_DEFAULT_PORT 8585 /* Flywheel default; it was 8787 until bridge_port_v=2 */
 #define BIKE_FTP_MIN 50
 #define BIKE_FTP_MAX 500
+#define BIKE_SURGE_RATIO_MIN_X100 105 /* surge_ratio 1.05 .. 2.00 in steps of 0.05 */
+#define BIKE_SURGE_RATIO_MAX_X100 200
+#define BIKE_SURGE_RATIO_DEFAULT_X100 120
+#define BIKE_SURGE_MIN_DEFAULT_PCT 80 /* surge_min_pct 0..100 in steps of 5 */
 
 /* The bridge's active rider (the opt-in "rider" message): written by the transport, read by bike.c.
  * ftp_w is always the MEASURED FTP.  An intensity preset (docs/intensity.md in Flywheel) adds an

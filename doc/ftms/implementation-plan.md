@@ -154,7 +154,7 @@ Each agent works in its own git worktree under the scratchpad, on a task branch.
 - Regress pins all of this off regardless of the file, as `regress.c:1356` does for Depth.
 
 **T2.5 In-game Bike menu** (Sonnet; Opus reviews the UX)
-- *Superseded:* the row list below is the original plan. The shipped menu is a flat, scrolling list of 19 rows (18 settings + Done), including FTP Source; see `design.md` §3 and `src/bike_menu.c`.
+- *Superseded:* the row list below is the original plan. The shipped menu is a flat, scrolling list of 21 rows (20 settings + Done), including FTP Source and the two surge-rule rows; see `design.md` §3 and `src/bike_menu.c`.
 - Add a new `SETUP_MENU_BIKE` submenu, using the e994e9a Depth row as the template (`src/opentyr.c` menu tables). The Graphics menu is full.
 - Rows:
   - Bike: On/Off

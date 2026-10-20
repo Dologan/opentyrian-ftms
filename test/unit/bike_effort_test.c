@@ -391,8 +391,10 @@ static int detector_starts(const BikeEffortConfig *base, const BikeEffortState *
 static void check_surge_threshold(void)
 {
 	static const unsigned ftps[] = { 50, 137, 200, 250, 500 };
-	static const bq16 mins[] = { 39322, 52429 };   /* 0.6 (default), 0.8: the min-pct floor binds at a low baseline */
-	static const bq16 ratios[] = { 78643, 98304 }; /* 1.2 (default), 1.5 */
+	/* min: 0, 0.6, 0.8 (default), 1.0 (the min-pct floor binds at a low baseline); ratio: 1.05 (lowest key value),
+	 * 1.2 (default), 1.5, 2.0 (highest key value) */
+	static const bq16 mins[] = { 0, 39322, 52429, 65536 };
+	static const bq16 ratios[] = { 68813, 78643, 98304, 131072 };
 	BikeEffortConfig c, w;
 	BikeEffortState s, ws;
 	bq16 t = 0;
@@ -419,18 +421,29 @@ static void check_surge_threshold(void)
 		check(!bike_surge_threshold(&fresh, &c, &t), "threshold: none on a fresh engine");
 	}
 
-	/* 2. values, FTP 200 W: floor 100 W, min-pct 0.6 -> 120 W, ratio 1.2 */
+	/* 2. values, FTP 200 W: floor 100 W, ratio 1.2; first with min-pct 0.6 (the old default), then the default 0.8 */
 	bike_effort_config_default(&c, 200);
+	check(c.surge_ratio == 78643 && c.surge_min_pct == 52429, "threshold: the default is ratio 1.2 and min-pct 0.8");
+	c.surge_min_pct = 39322; /* 0.6 */
 	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 120 * 65536) <= 256, "threshold: at the baseline floor it is 120 W (min-pct = ratio * floor)");
 	check(bike_surge_threshold_w(&c, 40 * 65536) == bike_surge_threshold_w(&c, 100 * 65536),
 	      "threshold: a baseline below the floor is floored like the detector's");
 	check(bike_surge_threshold_w(&c, 0) == bike_surge_threshold_w(&c, 100 * 65536), "threshold: baseline 0 is floored");
 	check(abs(bike_surge_threshold_w(&c, 200 * 65536) - 240 * 65536) <= 256, "threshold: a high baseline gives ratio * baseline (240 W)");
 	check(abs(bike_surge_threshold_w(&c, 150 * 65536) - 180 * 65536) <= 256, "threshold: 150 W baseline gives 180 W");
-	c.surge_min_pct = 52429; /* 0.8: the min-pct floor of 160 W binds below a 133.3 W baseline */
+	c.surge_min_pct = 52429; /* 0.8 (default): the min-pct floor of 160 W binds below a 133.3 W baseline */
 	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 160 * 65536) <= 256, "threshold: below the min-pct floor it is min_pct * ftp (160 W)");
 	check(abs(bike_surge_threshold_w(&c, 120 * 65536) - 160 * 65536) <= 256, "threshold: 120 W baseline still on the min-pct floor");
 	check(abs(bike_surge_threshold_w(&c, 140 * 65536) - 168 * 65536) <= 256, "threshold: 140 W baseline is on the ratio side (168 W)");
+	/* the other end of the keys: ratio 2.0 with min-pct 1.0 (200 W), and ratio 1.05 with min-pct 0 */
+	c.surge_ratio = 131072;
+	c.surge_min_pct = 65536;
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 200 * 65536) <= 256, "threshold: ratio 2.0 on the 100 W floor gives 200 W, the same as min-pct 1.0");
+	check(abs(bike_surge_threshold_w(&c, 150 * 65536) - 300 * 65536) <= 256, "threshold: ratio 2.0 on a 150 W baseline gives 300 W");
+	c.surge_ratio = 68813;
+	c.surge_min_pct = 0;
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 105 * 65536) <= 256, "threshold: ratio 1.05, no min-pct: 105 W on the floor");
+	check(abs(bike_surge_threshold_w(&c, 200 * 65536) - 210 * 65536) <= 256, "threshold: ratio 1.05 on a 200 W baseline gives 210 W");
 	bike_effort_config_default(&c, 200);
 	check(bike_surge_threshold_w(&c, INT32_MAX) == INT32_MAX, "threshold: saturates instead of overflowing");
 
@@ -461,49 +474,75 @@ static void check_surge_threshold(void)
 	printf("surge threshold: %ld baselines x configs against the detector, %ld mismatches\n", tried, bad);
 	check(bad == 0, "threshold: equals the first smoothed power at which the detector starts a surge");
 
-	/* 4. along a real run: the candidate time runs exactly while the threshold exists and fast >= threshold,
-	 *    and a start event only happens at or above the threshold (the marker cannot disagree with the detector) */
+	/* 4. along a real run (FTP 230 W, 150 W with two 20 s bursts): the candidate time runs exactly while the
+	 *    threshold exists and fast >= threshold, and a start event only happens at or above the threshold (the
+	 *    marker cannot disagree with the detector).  The default rule and the other keys' values, the bursts
+	 *    chosen so that either the ratio or the min-pct decides whether the rides surge. */
 	{
-		BikeEffortInput in;
-		BikeEffortSignals out;
-		unsigned i, starts = 0, agree = 0;
-		long disagree = 0;
+		static const struct { bq16 ratio, min; unsigned burst_w, starts; const char *what; } rides[] = {
+			{ 78643, 52429, 330, 2, "default, 330 W bursts" },
+			{ 78643, 52429, 200, 2, "default, 200 W bursts: above 0.8 x FTP (184 W) and 1.2 x baseline" },
+			{ 78643, 65536, 200, 0, "ratio 1.2, min-pct 1.0 (230 W): a 200 W burst is too low" },
+			{ 78643, 39322, 165, 0, "ratio 1.2, min-pct 0.6: 165 W is below 1.2 x baseline" },
+			/* 150 W steady already beats 1.05 x the baseline (it is still rising, about 141 W at 59 s): one surge from the
+			 * end of the warm-up that never ends */
+			{ 68813, 0, 165, 1, "ratio 1.05, no min-pct: 150 W steady is already a surge" },
+			/* the first burst lifts the baseline (about 160 W at 80 s, 166 W early in the second burst), so the
+			 * smoothed power never reaches 2.0 x baseline again */
+			{ 131072, 65536, 330, 1, "ratio 2.0, min-pct 1.0: the first burst only" },
+			{ 131072, 65536, 250, 0, "ratio 2.0, min-pct 1.0: 250 W is not twice the baseline" }
+		};
+		unsigned n;
 
-		bike_effort_config_default(&c, 230);
-		bike_effort_init(&s, &c);
-		memset(&in, 0, sizeof in);
-		in.has_sample = in.link_up = in.power_valid = true;
-		in.cadence_rpm = 90 * 65536;
-		for (i = 0; i < 160u * 1000000u / DT_US; ++i)
+		for (n = 0; n < sizeof rides / sizeof rides[0]; ++n)
 		{
-			const unsigned sec = (unsigned)((uint64_t)i * DT_US / 1000000u);
-			const unsigned watts = ((sec >= 60 && sec < 80) || (sec >= 120 && sec < 140)) ? 330 : 150;
-			bq16 thr = 0;
-			int above;
+			BikeEffortInput in;
+			BikeEffortSignals out;
+			unsigned i, starts = 0, agree = 0;
+			long disagree = 0;
+			char what[160];
 
-			in.seq = i;
-			in.power_w = (bq16)(watts * 65536);
-			bike_effort_step(&s, &c, DT_US, &in, &out);
-			above = bike_surge_threshold(&s, &c, &thr) && s.fast_w >= thr;
-			if (thr != 0 && thr != bike_surge_threshold_w(&c, out.baseline_w))
-				++disagree; /* the signals' floored baseline gives the same threshold as the state's */
-			if (out.events & BIKE_EV_SURGE_START)
+			bike_effort_config_default(&c, 230);
+			c.surge_ratio = rides[n].ratio;
+			c.surge_min_pct = rides[n].min;
+			bike_effort_init(&s, &c);
+			memset(&in, 0, sizeof in);
+			in.has_sample = in.link_up = in.power_valid = true;
+			in.cadence_rpm = 90 * 65536;
+			for (i = 0; i < 160u * 1000000u / DT_US; ++i)
 			{
-				++starts;
-				if (!above)
-					++disagree;
+				const unsigned sec = (unsigned)((uint64_t)i * DT_US / 1000000u);
+				const unsigned watts = ((sec >= 60 && sec < 80) || (sec >= 120 && sec < 140)) ? rides[n].burst_w : 150;
+				bq16 thr = 0;
+				int above;
+
+				in.seq = i;
+				in.power_w = (bq16)(watts * 65536);
+				bike_effort_step(&s, &c, DT_US, &in, &out);
+				above = bike_surge_threshold(&s, &c, &thr) && s.fast_w >= thr;
+				if (thr != 0 && thr != bike_surge_threshold_w(&c, out.baseline_w))
+					++disagree; /* the signals' floored baseline gives the same threshold as the state's */
+				if (out.events & BIKE_EV_SURGE_START)
+				{
+					++starts;
+					if (!above)
+						++disagree;
+				}
+				if (!s.surging && !(out.events & BIKE_EV_SURGE_START))
+				{
+					if ((s.surge_cand_us > 0) != (above != 0))
+						++disagree;
+					else
+						++agree;
+				}
 			}
-			if (!s.surging && !(out.events & BIKE_EV_SURGE_START))
-			{
-				if ((s.surge_cand_us > 0) != (above != 0))
-					++disagree;
-				else
-					++agree;
-			}
+			printf("surge threshold: along a ride (%s) %u starts, %u candidate checks agree, %ld disagree\n", rides[n].what,
+			       starts, agree, disagree);
+			sprintf(what, "threshold ride (%s): %u surges started", rides[n].what, rides[n].starts);
+			check(starts == rides[n].starts, what);
+			sprintf(what, "threshold ride (%s): the marker and the detector never disagree", rides[n].what);
+			check(disagree == 0, what);
 		}
-		printf("surge threshold: along a ride %u starts, %u candidate checks agree, %ld disagree\n", starts, agree, disagree);
-		check(starts == 2, "threshold ride: two surges started");
-		check(disagree == 0, "threshold ride: the marker and the detector never disagree");
 	}
 
 	/* 5. gauge scale: max(1.5 * ftp, 1.25 * threshold) */

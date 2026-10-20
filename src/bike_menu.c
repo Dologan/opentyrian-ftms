@@ -41,6 +41,8 @@ typedef enum
 	ROW_SIDEKICK,
 	ROW_SPECIAL,
 	ROW_SHIELD,
+	ROW_SURGE_RATIO,
+	ROW_SURGE_MIN,
 	ROW_AUTOFIRE,
 	ROW_RESERVE,
 	ROW_AIRMOUSE,
@@ -71,6 +73,8 @@ static const RowInfo rows[ROW_COUNT] = {
 	[ROW_SIDEKICK]  = { "Surge Sidekick:", "Sidekicks charge faster while surging." },
 	[ROW_SPECIAL]   = { "Surge Special:", "Special weapon recharges while surging." },
 	[ROW_SHIELD]    = { "Surge Shield:", "Shields regenerate faster with effort." },
+	[ROW_SURGE_RATIO] = { "Surge Ratio:", "Surge starts this far above your usual power." },
+	[ROW_SURGE_MIN] = { "Surge Min Power:", "A surge also needs this much of your FTP." },
 	[ROW_AUTOFIRE]  = { "Auto-fire:", "Toggle: a key switches auto-fire in play." },
 	[ROW_RESERVE]   = { "Auto-fire Reserve:", "Hold auto-fire back below this power." },
 	[ROW_AIRMOUSE]  = { "Air Mouse:", "Steer the ship with a pointer remote." },
@@ -87,6 +91,7 @@ enum
 	STRENGTH_MAX = 300, STRENGTH_UNIT = 5,
 	FLOOR_MAX = 64,
 	SENS_MIN = 25, SENS_MAX = 400, SENS_UNIT = 5,
+	SURGE_RATIO_UNIT = 5, SURGE_MIN_UNIT = 5, /* hundredths of the ratio; percent of the FTP */
 	ADDR_MAX = 70 /* 63 host characters, ':' and a 5 digit port */
 };
 
@@ -172,7 +177,8 @@ static bool *bool_field(RowId id)
 
 static bool row_is_stepper(RowId id)
 {
-	return id == ROW_FTP || id == ROW_STRENGTH || id == ROW_FLOOR || id == ROW_SENS;
+	return id == ROW_FTP || id == ROW_STRENGTH || id == ROW_FLOOR || id == ROW_SENS || id == ROW_SURGE_RATIO ||
+	       id == ROW_SURGE_MIN;
 }
 
 static void bridge_text(char *out, size_t cap)
@@ -222,6 +228,10 @@ static void row_value(RowId id, char *out, size_t cap)
 		else
 			snprintf(out, cap, "%u W", (unsigned)s->ftp_w);
 	}
+	else if (id == ROW_SURGE_RATIO)
+		snprintf(out, cap, "%u.%02ux", (unsigned)s->surge_ratio_x100 / 100, (unsigned)s->surge_ratio_x100 % 100);
+	else if (id == ROW_SURGE_MIN)
+		snprintf(out, cap, "%u %%", (unsigned)s->surge_min_pct);
 	else if (id == ROW_STRENGTH)
 		snprintf(out, cap, "%u%%", (unsigned)s->gain_pct);
 	else if (id == ROW_FLOOR)
@@ -250,6 +260,11 @@ static void row_adjust(RowId id, int dir, int mult)
 		if (!info.from_bridge) /* the bridge's value is not edited here: switch the source to Manual */
 			s->ftp_w = (uint16_t)clamp_int((int)s->ftp_w + dir * FTP_UNIT * mult, FTP_MIN, FTP_MAX);
 	}
+	else if (id == ROW_SURGE_RATIO)
+		s->surge_ratio_x100 = (uint16_t)clamp_int((int)s->surge_ratio_x100 + dir * SURGE_RATIO_UNIT * mult,
+		                                          BIKE_SURGE_RATIO_MIN_X100, BIKE_SURGE_RATIO_MAX_X100);
+	else if (id == ROW_SURGE_MIN)
+		s->surge_min_pct = (uint8_t)clamp_int((int)s->surge_min_pct + dir * SURGE_MIN_UNIT * mult, 0, 100);
 	else if (id == ROW_STRENGTH)
 		s->gain_pct = (uint16_t)clamp_int((int)s->gain_pct + dir * STRENGTH_UNIT * mult, 0, STRENGTH_MAX);
 	else if (id == ROW_FLOOR)

@@ -151,7 +151,7 @@ void bike_effort_config_default(BikeEffortConfig *c, uint32_t ftp_w)
 	c->baseline_tau_us = SEC(75);
 	c->baseline_floor_pct = 32768;
 	c->surge_ratio = 78643;   /* 1.2 */
-	c->surge_min_pct = 39322; /* 0.6 */
+	c->surge_min_pct = 52429; /* 0.8; the game overrides ratio and min from [ftms] surge_ratio / surge_min_pct */
 	c->surge_hold_us = SEC(2);
 	c->surge_exit_us = SEC(1);
 	c->surge_fill_us = SEC(8);

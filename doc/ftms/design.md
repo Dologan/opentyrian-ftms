@@ -24,7 +24,7 @@ enum { BIKE_EV_MOVING_START=1, BIKE_EV_MOVING_STOP=2, BIKE_EV_SURGE_START=4,
 typedef struct { uint32_t ftp_w; bq16 moving_on_rpm, moving_off_rpm;          /* 25, 15 */
   uint32_t moving_grace_us, silent_stop_us, start_confirm_us;                 /* 1.5 s, 3 s, 0.25 s */
   uint32_t effort_tau_us, fast_tau_us, baseline_tau_us;                       /* 3 s, 1.5 s, 75 s */
-  bq16 baseline_floor_pct, surge_ratio, surge_min_pct;                        /* .5, 1.2, .6 */
+  bq16 baseline_floor_pct, surge_ratio, surge_min_pct;                        /* .5, 1.2, .8 (ratio and min from [ftms] surge_ratio, surge_min_pct) */
   uint32_t surge_hold_us, surge_exit_us, surge_fill_us, surge_warmup_us;      /* 2,1,8,30 s */
   bq16 coast_max_rpm, coast_drop_frac; uint32_t coast_window_us; uint8_t coast_resume_samples; /* 45,.35,5 s,3 */
 } BikeEffortConfig;
@@ -139,6 +139,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
 - **`[ftms]` keys** (the same names are accepted by `bike_settings_set`):
   - `enabled` (master), `generator`, `hud`
   - `surge_superbomb`, `surge_sidekick`, `surge_special`, `surge_shield`
+  - `surge_ratio` (the smoothed power must reach this multiple of the baseline: `1.05` to `2.00` in steps of `0.05`, default `1.20`, written with two decimals) and `surge_min_pct` (and at least this percent of the FTP: 0 to 100 in steps of 5, default 80; it was a fixed 60 until 2026-10-20). A value out of range or off the step is rejected like any other bad key (`--regress-bike-set` refuses to start, a config load logs a warning and keeps the default); a config without them loads the defaults. They reach the engine through `bike_frame_tick()`, so a change in the menu applies on the next tick, the threshold marker and the gauge scale follow it, and the engine state is kept.
   - `autofire` (`off`|`toggle`), `autofire_reserve` (0|25|50), `autofire_key`, `autofire_key2` (SDL scancode names; defaults `A` and `Application`, i.e. the remote's Menu key, pending the T3b.0 probe)
   - `air_mouse`, `pointer_sensitivity`, `touch`, `remote_buttons` (independent: menu translation no longer needs Air Mouse; `pointer_smoothing` was never implemented and is retired: old configs still load, a config with Air Mouse on and no `remote_buttons` key loads with Remote Buttons on)
   - `ftp`, `ftp_source` (`auto` | `manual`, see §3a), `floor`, `bias`, `strength` (gain), `cap`
@@ -157,7 +158,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
 - **Regress pin**: next to `regress.c:1356`, call `bike_settings_default()` and force `master = 0`. Then apply `--regress-bike-set`. `--regress-bike-feed` implies `master = 1, generator = 1`. Set `bike_settings_pinned`, which makes `bike_config_save()` leave `[ftms]` untouched.
 - **Menus**: `SETUP_MENU_BIKE = 4` (`opentyr.h:68`, `opentyr.c:283`).
   - The Setup menu gets a "Bike and Controls..." row.
-  - **(dev)** The shipped Bike menu (`src/bike_menu.c`) is one flat list of 19 rows (18 settings + Done): master, Bike Power, Bridge, FTP, FTP Source, Strength, Floor, the four Surge toggles, Auto-fire, Auto-fire Reserve, Air Mouse, Remote Buttons, Pointer Speed, Touch Controls and Bike HUD. It shows 9 rows at a time and scrolls; the live status line and the help line stay pinned below. There are no child menus.
+  - **(dev)** The shipped Bike menu (`src/bike_menu.c`) is one flat list of 21 rows (20 settings + Done): master, Bike Power, Bridge, FTP, FTP Source, Strength, Floor, the four Surge toggles, Surge Ratio (`1.20x`, 1.05 to 2.00, step 0.05) and Surge Min Power (`80 %` of the FTP, 0 to 100, step 5), Auto-fire, Auto-fire Reserve, Air Mouse, Remote Buttons, Pointer Speed, Touch Controls and Bike HUD. It shows 9 rows at a time and scrolls; the live status line and the help line stay pinned below. There are no child menus.
   - Mid-game: add a C-string "Bike and Controls" row to `JE_inGameSetup` (`mainint.c:1514`). It is hidden when `isNetworkGame` and calls `setupMenu()` with `setup_menu_start = SETUP_MENU_BIKE`.
   - Changes take effect on the next `bike_frame_tick()`, because nothing is cached.
 
