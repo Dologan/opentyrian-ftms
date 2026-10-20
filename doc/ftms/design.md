@@ -97,7 +97,7 @@ uint32_t bike_tick_count(void);
 **`src/bike_rules.[ch]`**: mapping C, link-loss blend and surge effects. It may include `player.h` and `varz.h`.
 ```c
 void     bike_rules_level_start(void);                     /* remainder acc = 0 */
-void     bike_rules_frame(const BikeEffortSignals *sig, bool link_up); /* blend + superbomb grant */
+void     bike_rules_frame(const BikeEffortSignals *sig, bool link_up, bool active, uint32_t dt_us); /* blend + superbomb grant; active = generator on */
 unsigned bike_rules_power_add(unsigned stock_add);         /* replaces powerAdd at the refill */
 unsigned bike_rules_shield_wait(unsigned stock_wait);      /* 15 → 15 - round(7·n) */
 unsigned bike_rules_sidekick_charge_ticks(unsigned stock); /* 20 → 10 while surging */
@@ -109,7 +109,7 @@ int32_t  bike_income_q16(unsigned G, bq16 effort_norm, uint8_t floor, uint16_t b
   - `G` is the `powerAdd` read at the call site, i.e. the equipped generator.
   - Income is Q16 per frame and goes through an exact remainder accumulator: `acc += income; add = acc >> 16; acc &= 0xFFFF`.
 - **Link-loss blend**: weight `w` (Q16) ramps toward 1 at 1/2 s per second once the link has been down for 1.5 s, and back toward 0 when the link returns. `out = lerp(income, stock_add·65536, w)`.
-  - `w = 1` at session start, and whenever the gate goes from closed to open (e.g. a mid-level toggle), so income ramps in and never jumps.
+  - `w = 1` at session start, and whenever the generator turns on (`active`, i.e. `bike_generator_on()`, goes from false to true: the gate opening, a mid-level toggle or the first sample arriving), so income ramps in and never jumps.
 
 **`src/bike_controls.[ch]`**: auto-fire, air mouse, touch and remote buttons, everything that edits input. **(dev)** These are kept out of `bike_rules`, because controls do not need a data source.
 ```c
@@ -126,7 +126,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `bool bike_ws_open(const char *host, uint16_t port)`
   - `void bike_ws_poll(BikeMailbox *mb, uint64_t now_us)`
   - `void bike_ws_close(void)`
-- After the upgrade it sends `{"type":"hello","client":"game","v":1,"caps":["rider"]}` (the opt-in rider message, §3a).
+- After the upgrade it sends `{"type":"hello","client":"game","v":1,"caps":["rider","intensity"]}` (the opt-in rider and intensity messages, §3a).
 - It parses `telemetry` messages (`v == 1` only; `null` sets the field's `*_valid = false`), `status.state` and `rider` messages (handled before the `v` check; they do not count as proof of the protocol for the reconnect backoff).
 - Reconnect backoff is 0.5, 1, 2, 4 then 5 s.
 - `arrival_us` comes from `SDL_GetTicksNS()/1000`.
@@ -195,7 +195,7 @@ bike_gate_open() = master && level_active && !twoPlayerMode && !onePlayerAction 
 | Auto-fire | `mainint.c:3769`, after the keyboard block and before "Reverse controls" (`3770`). This is before network packing (`3872-3882`). | `if (playerNum_ == 1 && bike_controls_autofire(power)) button[0] = true;` Manual fire is OR-ed earlier, so the reserve never blocks it. |
 | Pointer | `mainint.c:3735` (`mouseXC += mouseXR`) | `bike_controls_pointer(&mouseXC, &mouseYC)` when `air_mouse`. The ±30 clamp at `3788-3795` is kept. |
 | Sidekick surge | `mainint.c:4731` | `charge_ticks = bike_rules_sidekick_charge_ticks(20);` |
-| Special surge | `varz.c:633`, after `specialWait--` | `if (bike_rules_extra_special_tick() && specialWait > 0) specialWait--;` |
+| Special surge | `varz.c:638`, after `specialWait--` | `if (specialWait > 0 && bike_rules_extra_special_tick()) specialWait--;` (the wait is tested first, so the tick, which also counts coverage, is only evaluated while a wait is running) |
 | Superbomb | inside `bike_rules_frame` | On `BIKE_EV_OVERDRIVE`: `++player[0].superbombs` like the pickup at `mainint.c:5091`, but capped at `BIKE_SUPERBOMB_CAP` (5, not the pickup's 10) and at most once per `superbomb_cooldown` (default 60 s of gameplay time, counted from `dt`, so frame-rate invariant; the cooldown carries across levels and retries of a session and resets only on a new game, `JE_initPlayerData`). Measured: a Q200B ride fires ~15 overdrive events in 90 s, so uncapped it was too generous |
 | Transport | `keyboard.c:189` `handleSdlEvents()` | `bike_service()` |
 | HUD | `modern_hud.c:875` status panel; generator row `662` | Reads `bike_hud()` only. It never writes, never calls `mt_rand`, and never touches `bike_settings`. |
