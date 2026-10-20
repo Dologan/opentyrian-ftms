@@ -13,6 +13,8 @@ navigation pass. Start with the implementation plan for the status of each step.
 | [`remote-navigation-audit.md`](remote-navigation-audit.md) | T3b.4 audit: which screens work with arrow keys, Enter, Esc, left/right click and media keys only. |
 | [`phase0-spikes/`](phase0-spikes/) | Raw Phase 0 spike material: calibration analysis, Modern Tyrian and web routes, the route-A WebSocket client, and research notes on BLE and the sidecar. |
 
+Who owns what: this game owns its mechanics; Flywheel supplies telemetry, rider FTP and presets, and in future device facts. See Flywheel's `docs/ARCHITECTURE.md` ("Who owns what"), its `docs/mechanics.md` (catalogue of mechanics) and `docs/compatibility.md` (tested hardware).
+
 The launch helper for playing with a bike is in [`../../tools/ftms/`](../../tools/ftms/),
 and the player-facing instructions are in the main
 [README](../../README.md#playing-with-an-exercise-bike).
