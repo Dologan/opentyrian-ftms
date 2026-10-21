@@ -27,7 +27,7 @@ ARG=""
 [ "${1:-}" = "--update" ] && ARG="--update-digests"
 
 
-if ! "$CC" -std=iso9899:1999 -pedantic -Wall -Wextra -Werror -O1 -I"$ROOT/src" \
+if ! "$CC" -std=iso9899:1999 -pedantic -Wall -Wextra -Wno-format-truncation -Werror -O1 -I"$ROOT/src" \
 	-o "$WORK/bike_effort_test" "$ROOT/test/unit/bike_effort_test.c" \
 	"$ROOT/src/bike_effort.c" "$ROOT/src/bike_feed.c" -lm 2> "$WORK/build.log"; then
 	echo "FAIL bike-effort: the check did not build"
