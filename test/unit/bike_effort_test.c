@@ -717,7 +717,7 @@ static int gen_golden(const char *root, const char *outdir)
 		return 1;
 	}
 	strcpy(dir, outdir);
-	sprintf(path, "%s/test/bike/effort/golden/manifest.txt", root);
+	snprintf(path, sizeof path, "%s/test/bike/effort/golden/manifest.txt", root);
 	man = fopen(path, "rb");
 	if (man == NULL)
 	{
@@ -737,7 +737,7 @@ static int gen_golden(const char *root, const char *outdir)
 	{
 		BikeFeed bf;
 
-		sprintf(path, "%s/test/bike/effort/feeds/%s", root, feeds[i]);
+		snprintf(path, sizeof path, "%s/test/bike/effort/feeds/%s", root, feeds[i]);
 		if (!bike_feed_load(&bf, path))
 		{
 			fprintf(stderr, "cannot load feed %s\n", path);
@@ -753,7 +753,7 @@ static int gen_golden(const char *root, const char *outdir)
 		run_case(&bf, ftps[i], ticks, cbuf);
 		bike_feed_free(&bf);
 		tickv[i] = ticks;
-		sprintf(path, "%s/%s.csv", dir, names[i]);
+		snprintf(path, sizeof path, "%s/%s.csv", dir, names[i]);
 		out = fopen(path, "wb");
 		if (out == NULL)
 		{
@@ -763,7 +763,7 @@ static int gen_golden(const char *root, const char *outdir)
 		write_golden(out, cbuf, ticks);
 		fclose(out);
 	}
-	sprintf(path, "%s/manifest.txt", dir);
+	snprintf(path, sizeof path, "%s/manifest.txt", dir);
 	out = fopen(path, "wb");
 	if (out == NULL)
 	{
@@ -802,7 +802,7 @@ int main(int argc, char **argv)
 	{
 		char dir[1024];
 
-		sprintf(dir, "%s/test/bike/effort/golden", argv[1]);
+		snprintf(dir, sizeof dir, "%s/test/bike/effort/golden", argv[1]);
 		return gen_golden(argv[1], argc > 3 ? argv[3] : dir);
 	}
 
@@ -814,7 +814,7 @@ int main(int argc, char **argv)
 	check_surge_cue();
 	check_no_power();
 
-	sprintf(path, "%s/test/bike/effort/c_digests.txt", argv[1]);
+	snprintf(path, sizeof path, "%s/test/bike/effort/c_digests.txt", argv[1]);
 	dig_in = fopen(path, "rb");
 	if (dig_in != NULL)
 	{
@@ -825,7 +825,7 @@ int main(int argc, char **argv)
 	if (update)
 		dig_out = fopen(path, "wb");
 
-	sprintf(path, "%s/test/bike/effort/golden/manifest.txt", argv[1]);
+	snprintf(path, sizeof path, "%s/test/bike/effort/golden/manifest.txt", argv[1]);
 	man = fopen(path, "rb");
 	if (man == NULL)
 	{
@@ -847,14 +847,14 @@ int main(int argc, char **argv)
 			check(0, "case too long");
 			continue;
 		}
-		sprintf(path, "%s/test/bike/effort/feeds/%s", argv[1], feed);
+		snprintf(path, sizeof path, "%s/test/bike/effort/feeds/%s", argv[1], feed);
 		if (!bike_feed_load(&bf, path))
 		{
 			printf("FAIL %s: cannot load feed %s\n", name, path);
 			++failures;
 			continue;
 		}
-		sprintf(path, "%s/test/bike/effort/golden/%s.csv", argv[1], name);
+		snprintf(path, sizeof path, "%s/test/bike/effort/golden/%s.csv", argv[1], name);
 		if (!read_golden(path, gbuf, ticks))
 		{
 			printf("FAIL %s: cannot read golden %s\n", name, path);
