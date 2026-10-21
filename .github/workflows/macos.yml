@@ -1,8 +1,8 @@
 name: macOS
 
 on:
-  push:
-  pull_request:
+  # Suspended for pushes and PRs (slow, and costs the most Actions minutes). It still
+  # runs by hand and when a release is published, so the macOS package can be built.
   workflow_dispatch:
   release:
     types: [published]

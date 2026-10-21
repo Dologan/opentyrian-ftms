@@ -8,6 +8,11 @@ name: Regression (full sweeps)
 
 on:
   workflow_dispatch:
+    inputs:
+      macos:
+        description: "Also run the macOS job (suspended by default: slow and expensive)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -67,6 +72,7 @@ jobs:
 
   macos:
     name: macOS arm64 (full sweeps)
+    if: ${{ inputs.macos }}
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7

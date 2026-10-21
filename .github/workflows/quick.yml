@@ -1,0 +1,74 @@
+name: Quick
+
+# The light check for branch pushes and pull requests: a -Werror debug build and the
+# quick regression tier (Tyrian 2.1 only, Linux x86_64). The full builds, both
+# architectures, Windows, Tyrian 2000 and packaging run from linux.yml and windows.yml
+# on main, by hand, and for releases.
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+concurrency:
+  group: quick-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quick:
+    name: Quick (Linux x86_64)
+    runs-on: ubuntu-22.04
+    env:
+      PKG_CONFIG_PATH: ${{ github.workspace }}/build/sdl/lib/pkgconfig
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config curl unzip \
+            libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev \
+            libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+            libwayland-dev libxkbcommon-dev libdecor-0-dev libegl1-mesa-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libgbm-dev libdrm-dev \
+            libdbus-1-dev libudev-dev libusb-1.0-0-dev wayland-protocols \
+            libpipewire-0.3-dev
+      - name: Cache static SDL3 build
+        uses: actions/cache@v6
+        with:
+          path: build/sdl
+          key: sdl3-static-x86_64-${{ hashFiles('make_linux.sh') }}
+      - name: Build static SDL3 + SDL3_net (deps only)
+        run: ./make_linux.sh --deps-only
+      - name: Compile check (debug, -Werror)
+        run: make -j"$(nproc)" debug
+      - name: Cache game data
+        uses: actions/cache@v6
+        with:
+          path: data
+          key: tyrian21-data-${{ hashFiles('test/regress/data-manifest.txt') }}
+      - name: Fetch game data
+        run: ./get_data.sh
+      - name: Build (make_linux.sh, static SDL3)
+        run: ./make_linux.sh
+      - name: Quick regression
+        env:
+          REGRESS_SKIP_BUILD: "1"
+        run: make regress-quick
+      - name: Bike checks
+        run: tools/check_bike_effort.sh
+      - name: Upload regression output on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: regression-actual-quick
+          path: |
+            test/regress/actual/*.txt
+            test/regress/actual/*.log
+          if-no-files-found: ignore
+          retention-days: 1

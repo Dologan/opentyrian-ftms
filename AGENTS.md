@@ -78,7 +78,7 @@ tools/regress-2000.sh --update-case=<label>   # regenerate one 2000 baseline; --
   - `check_final_regression.sh` (the §7 matrix: data-open audit, save namespaces, UI save/load, bosses, pause, gamepad, launcher handoff);
   - `check_display.sh` (runtime display changes, modal centring, launcher first frame).
 - **Never run the long `--interp-check`/`--smoothness-check` sweeps locally.** They run in the manual GitHub workflow `regress-full.yml`.
-- **CI** (`.github/workflows/{linux,macos,windows}.yml`) runs on pushes and PRs to any branch:
+- **CI** (since 2026-10-21, to save Actions minutes): `quick.yml` runs on every branch push and PR (Linux x86_64: `-Werror` debug build, `make regress-quick`, `check_bike_effort.sh`). `linux.yml` and `windows.yml` run the full set below only on pushes to `main`, by hand and on releases. `macos.yml` is suspended for pushes and PRs (by hand and on releases only; `regress-full.yml` has a `macos` input, default off). The full set:
   - build, `make regress`, then `tools/fetch_t2000_data.sh` (camanis.net, exact size + SHA-256, into `$RUNNER_TEMP`, **no Actions cache**, because a public repo's cache is readable from fork PRs) and `make regress-2000`;
   - a lightweight decision job skips docs-only pushes/PRs and pushes whose SHA already passed the same workflow on any branch; manual runs always build/test. Releases reuse complete push package artifacts for the tagged SHA (rename attachments only), building only if no successful push exists; missing/expired artifacts fail explicitly.
   - on failure it uploads only `*.txt`/`*.log`, and releases ship 2.1 data only.

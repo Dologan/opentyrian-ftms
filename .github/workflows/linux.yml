@@ -1,8 +1,10 @@
 name: Linux
 
 on:
+  # Full build and regression only on main, by hand, and for releases. Branch pushes
+  # and PRs get the light check in quick.yml (Actions minutes are limited).
   push:
-  pull_request:
+    branches: [main]
   workflow_dispatch:
   release:
     types: [published]
