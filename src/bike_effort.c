@@ -3,9 +3,11 @@
  *
  * Port of Flywheel's game/src/core/effort/effort-engine.ts and
  * game/src/core/effort/filters.ts (Flywheel, MIT).  This is a
- * port: the TypeScript is the behavioural reference and the golden fixtures in
- * test/bike/golden (vendored from Flywheel's shared/conformance/effort) are
- * produced by running it.
+ * port: the TypeScript was the behavioural reference.  The golden files in
+ * test/bike/effort/golden started as a copy of what that engine produced; they
+ * and the feeds are now this repo's own test data, and the goldens are written by
+ * this engine (tools/bike/gen_effort_golden.sh): this engine, not Flywheel's, is the
+ * rule the game plays by.
  *
  * Arithmetic: values are Q16.16 in int32_t, time is microseconds, EMA state is
  * Q16, and the EMA coefficient is Q30.  Everything is integer, so the result is
@@ -83,15 +85,6 @@ bq16 bike_effort_norm(bq16 effort_pct)
 	return piecewise(effort_pct, knots, 4);
 }
 
-/* cadence-only power guess (fraction of FTP), used when the bike reports no power */
-static bq16 cadence_power_frac(bq16 cadence)
-{
-	static const Knot knots[] = {
-		{ 30 * 65536, 0 }, { 60 * 65536, 29491 }, { 90 * 65536, 52429 }, { 110 * 65536, 65536 }
-	};
-	return piecewise(cadence, knots, 4);
-}
-
 /* ---- EMA ------------------------------------------------------------------ */
 
 /* 1 - e^-x as Q30, x = dt/tau.  Taylor series to x^5 for x <= 0.25; a larger x is
@@ -149,7 +142,7 @@ void bike_effort_config_default(BikeEffortConfig *c, uint32_t ftp_w)
 	c->baseline_tau_us = SEC(75);
 	c->baseline_floor_pct = 32768;
 	c->surge_ratio = 78643;   /* 1.2 */
-	c->surge_min_pct = 39322; /* 0.6 */
+	c->surge_min_pct = 52429; /* 0.8; the game overrides ratio and min from [ftms] surge_ratio / surge_min_pct */
 	c->surge_hold_us = SEC(2);
 	c->surge_exit_us = SEC(1);
 	c->surge_fill_us = SEC(8);
@@ -290,7 +283,7 @@ static bq16 ratio_of(bq16 fast, bq16 base)
 	return to_bq16(round_div((int64_t)fast * Q, base));
 }
 
-static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt, bq16 fast,
+static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt, bq16 fast, bool powered,
                          bq16 *ratio_out, bq16 *baseline_out, uint8_t *ev)
 {
 	const bq16 floor_w = baseline_floor(c);
@@ -298,7 +291,14 @@ static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t
 	bq16 baseline, ratio;
 	const int64_t one30 = (int64_t)1 << 30;
 
-	if (s->moving)
+	if (!powered)
+	{
+		/* No power reading: nothing to baseline against.  The baseline and the warm-up start over, so a
+		 * power reading that appears later behaves like the start of a ride, not like a jump. */
+		s->baseline_w = 0;
+		s->moving_time_us = 0;
+	}
+	else if (s->moving)
 	{
 		uint32_t tau, tau_eff;
 		s->moving_time_us = sat_add(s->moving_time_us, dt);
@@ -312,7 +312,7 @@ static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t
 	warmed = s->moving_time_us >= c->surge_warmup_us;
 	baseline = (s->baseline_w > floor_w) ? s->baseline_w : floor_w;
 	ratio = ratio_of(fast, baseline);
-	qualifies = warmed && s->moving && ratio >= c->surge_ratio &&
+	qualifies = powered && warmed && s->moving && ratio >= c->surge_ratio &&
 	            (int64_t)fast >= (int64_t)c->surge_min_pct * c->ftp_w;
 
 	if (!s->surging)
@@ -328,9 +328,9 @@ static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t
 	else
 	{
 		bq16 exit_ratio = Q + (c->surge_ratio - Q) / 2;
-		bool dropping = !s->moving || ratio < exit_ratio;
+		bool dropping = !s->moving || !powered || ratio < exit_ratio;
 		s->surge_exit_us = dropping ? sat_add(s->surge_exit_us, dt) : 0;
-		if (s->surge_exit_us >= c->surge_exit_us || !s->moving)
+		if (s->surge_exit_us >= c->surge_exit_us || !s->moving || !powered)
 		{
 			s->surging = false;
 			s->surge_cand_us = 0;
@@ -361,6 +361,67 @@ static void update_surge(BikeEffortState *s, const BikeEffortConfig *c, uint32_t
 	*baseline_out = baseline;
 }
 
+/* ---- surge threshold, gauge scale, start cue ------------------------------- */
+
+/* The detector's test is  round_div(fast * Q, base) >= surge_ratio  (ratio_of), i.e.
+ * (fast * Q + base / 2) / base >= R  <=>  fast >= ceil((R * base - base / 2) / Q),  and
+ * fast >= surge_min_pct * ftp.  Both are exact integers, so the marker sits on the first
+ * value of fast that qualifies; test/unit/bike_effort_test.c checks it against ratio_of. */
+bq16 bike_surge_threshold_w(const BikeEffortConfig *c, bq16 baseline)
+{
+	const bq16 floor_w = baseline_floor(c);
+	const int64_t base = (baseline > floor_w) ? baseline : floor_w;
+	const int64_t min_w = (int64_t)c->surge_min_pct * c->ftp_w;
+	int64_t ratio_w;
+
+	if (base <= 0)
+		ratio_w = (c->surge_ratio <= 0) ? 0 : INT32_MAX; /* ratio_of() is 0: only a ratio <= 0 passes */
+	else
+	{
+		const int64_t need = (int64_t)c->surge_ratio * base - base / 2;
+		ratio_w = need <= 0 ? 0 : (need + Q - 1) / Q;
+	}
+	return to_bq16(ratio_w > min_w ? ratio_w : min_w);
+}
+
+bool bike_surge_threshold(const BikeEffortState *s, const BikeEffortConfig *c, bq16 *threshold_w)
+{
+	if (!s->moving || s->moving_time_us < c->surge_warmup_us)
+		return false;
+	*threshold_w = bike_surge_threshold_w(c, s->baseline_w);
+	return true;
+}
+
+bq16 bike_surge_gauge_scale_w(const BikeEffortConfig *c, bool has_threshold, bq16 threshold_w)
+{
+	const int64_t ftp_scale = ((int64_t)c->ftp_w * Q * BIKE_GAUGE_FTP_MULT_Q16 + Q / 2) / Q;
+	int64_t scale = ftp_scale;
+
+	if (has_threshold)
+	{
+		const int64_t thr_scale = round_div((int64_t)threshold_w * BIKE_GAUGE_THR_MULT_Q16, Q);
+		if (thr_scale > scale)
+			scale = thr_scale;
+	}
+	return to_bq16(scale < 1 ? 1 : scale);
+}
+
+uint32_t bike_surge_cue_step(uint32_t remaining_us, uint32_t dt_us, uint8_t events, bool surging)
+{
+	if (events & BIKE_EV_SURGE_START)
+		return BIKE_SURGE_CUE_US;
+	if (!surging)
+		return 0;
+	return remaining_us > dt_us ? remaining_us - dt_us : 0;
+}
+
+bool bike_surge_cue_lit(uint32_t remaining_us)
+{
+	if (remaining_us == 0 || remaining_us > BIKE_SURGE_CUE_US)
+		return false;
+	return ((BIKE_SURGE_CUE_US - remaining_us) / BIKE_SURGE_CUE_FLASH_US) % 2u == 0;
+}
+
 /* ---- step ----------------------------------------------------------------- */
 
 void bike_effort_step(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt_us,
@@ -368,6 +429,9 @@ void bike_effort_step(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt
 {
 	bool stale = !in->link_up;
 	bool fresh = in->has_sample && in->link_up && in->age_us <= c->silent_stop_us;
+	/* A fresh sample without power (the bike reports none): no watts are invented.  Moving and stopped
+	 * still follow the cadence; every power-derived signal stays at zero. */
+	bool no_power = fresh && !in->power_valid;
 	bool is_new;
 	bq16 cadence = 0, power = 0, fast, ratio, baseline, pct;
 	uint8_t ev = 0;
@@ -375,10 +439,8 @@ void bike_effort_step(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt
 	if (fresh)
 	{
 		cadence = (in->cadence_rpm > 0) ? in->cadence_rpm : 0;
-		if (in->power_valid)
+		if (!no_power)
 			power = (in->power_w > 0) ? in->power_w : 0;
-		else
-			power = to_bq16((int64_t)c->ftp_w * cadence_power_frac(cadence));
 	}
 
 	s->clock_us += dt_us;
@@ -389,11 +451,16 @@ void bike_effort_step(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt
 		s->has_last_seq = true;
 	}
 	update_moving(s, c, dt_us, cadence, stale, is_new, &ev);
-	s->effort_w = ema_step(s->effort_w, power, dt_us, c->effort_tau_us);
-	s->fast_w = ema_step(s->fast_w, power, dt_us, c->fast_tau_us);
+	if (no_power)
+		s->effort_w = s->fast_w = 0;
+	else
+	{
+		s->effort_w = ema_step(s->effort_w, power, dt_us, c->effort_tau_us);
+		s->fast_w = ema_step(s->fast_w, power, dt_us, c->fast_tau_us);
+	}
 	fast = s->fast_w;
 	pct = to_bq16(round_div((int64_t)s->effort_w, (int64_t)c->ftp_w));
-	update_surge(s, c, dt_us, fast, &ratio, &baseline, &ev);
+	update_surge(s, c, dt_us, fast, !no_power, &ratio, &baseline, &ev);
 
 	out->moving = s->moving;
 	out->stale = stale;
@@ -402,8 +469,9 @@ void bike_effort_step(BikeEffortState *s, const BikeEffortConfig *c, uint32_t dt
 	out->cadence_rpm = cadence;
 	out->effort_w = s->effort_w;
 	out->effort_pct = pct;
-	out->effort_norm = s->moving ? bike_effort_norm(pct) : 0;
-	out->baseline_w = baseline;
+	out->effort_norm = (s->moving && !no_power) ? bike_effort_norm(pct) : 0;
+	out->no_power = no_power;
+	out->baseline_w = no_power ? 0 : baseline;
 	out->surge = surge_intensity(s, c, ratio);
 	out->surge_meter = to_bq16(round_shift((int64_t)s->meter_q30, 14));
 	out->events = ev;

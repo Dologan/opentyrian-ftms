@@ -1,11 +1,17 @@
 /*
  * Unit test of the fixed-point effort engine (src/bike_effort.c) and the feed
- * reader (src/bike_feed.c) against golden output produced by Flywheel's real
- * TypeScript EffortEngine (Flywheel's shared/conformance/effort/gen_golden.mjs; the
- * outputs are vendored in test/bike/golden, see test/bike/VENDORED_FROM).  Built
+ * reader (src/bike_feed.c) against the golden files in test/bike/effort/golden
+ * (feeds in test/bike/effort/feeds; both owned by this repo).  The goldens are
+ * written by this engine (tools/bike/gen_effort_golden.sh); they were first copied
+ * from the output of Flywheel's TypeScript EffortEngine and the C engine matched
+ * them within the tolerances below, which is what the port was held to.  Built
  * and run by tools/check_bike_effort.sh; needs no SDL and no game data.
  *
  * usage: bike_effort_test REPO_ROOT [--update-digests]
+ *        bike_effort_test REPO_ROOT --dump-effort FEED FTP_W [TICKS]   golden CSV to stdout
+ *        bike_effort_test REPO_ROOT --gen-golden [OUTDIR]              rewrite the goldens
+ * The last two are the golden generator (tools/bike/gen_effort_golden.sh): run it only
+ * after an intentional change of the engine, then review `git diff test/bike/effort`.
  *
  * Tolerances (fixed point vs the float reference):
  *   effort_w, baseline_w   +-(0.25 W + 0.2 %)
@@ -20,12 +26,13 @@
  *
  * Determinism: every case is run twice; the digest of all per-tick outputs and
  * of the final state must be identical, and equal to the committed value in
- * test/bike/golden/c_digests.txt (so other platforms/compilers must agree).
+ * test/bike/effort/c_digests.txt (so other platforms/compilers must agree).
  */
 #include "../../src/bike_effort.h"
 #include "../../src/bike_feed.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -334,9 +341,444 @@ static void check_feed_const(void)
 	check(!bike_feed_load(&f, "const:abc"), "const: rejects garbage");
 }
 
+
+/* ---- surge threshold, gauge scale, start cue --------------------------------- */
+
+/* A warmed-up, moving engine at `ftp`, built by running the real step for 40 s at 90 rpm and `watts`. */
+static void warm_engine(BikeEffortConfig *c, BikeEffortState *s, unsigned ftp, unsigned watts)
+{
+	BikeEffortInput in;
+	BikeEffortSignals out;
+	unsigned i;
+
+	bike_effort_config_default(c, ftp);
+	bike_effort_init(s, c);
+	memset(&in, 0, sizeof in);
+	in.has_sample = in.link_up = in.power_valid = true;
+	in.power_w = (bq16)(watts * 65536);
+	in.cadence_rpm = 90 * 65536;
+	for (i = 0; i < 40u * 1000000u / DT_US; ++i)
+	{
+		in.seq = i;
+		bike_effort_step(s, c, DT_US, &in, &out);
+	}
+}
+
+/* Does the real detector start a surge when the smoothed power is `fast` over `baseline`?  dt = 0 leaves both
+ * EMAs untouched; with a hold of 1 us and a candidate time of 1 us, a qualifying step keeps it at 1 (event) and
+ * any other step resets it to 0 (no event). */
+static int detector_starts(const BikeEffortConfig *base, const BikeEffortState *warm, bq16 baseline, bq16 fast)
+{
+	BikeEffortConfig c = *base;
+	BikeEffortState s = *warm;
+	BikeEffortInput in;
+	BikeEffortSignals out;
+
+	c.surge_hold_us = 1;
+	s.surging = false;
+	s.surge_cand_us = 1;
+	s.baseline_w = baseline;
+	s.fast_w = fast;
+	memset(&in, 0, sizeof in);
+	in.has_sample = in.link_up = in.power_valid = true;
+	in.seq = s.last_seq;
+	in.power_w = fast;
+	in.cadence_rpm = 90 * 65536;
+	bike_effort_step(&s, &c, 0, &in, &out);
+	return (out.events & BIKE_EV_SURGE_START) != 0;
+}
+
+static void check_surge_threshold(void)
+{
+	static const unsigned ftps[] = { 50, 137, 200, 250, 500 };
+	/* min: 0, 0.6, 0.8 (default), 1.0 (the min-pct floor binds at a low baseline); ratio: 1.05 (lowest key value),
+	 * 1.2 (default), 1.5, 2.0 (highest key value) */
+	static const bq16 mins[] = { 0, 39322, 52429, 65536 };
+	static const bq16 ratios[] = { 68813, 78643, 98304, 131072 };
+	BikeEffortConfig c, w;
+	BikeEffortState s, ws;
+	bq16 t = 0;
+	unsigned a, b, r, k;
+	long bad = 0, tried = 0;
+
+	/* 1. before the warm-up and while not moving there is no threshold (the detector cannot qualify either) */
+	warm_engine(&c, &s, 200, 150);
+	check(s.moving && s.moving_time_us >= c.surge_warmup_us, "threshold: the engine warmed up and is moving");
+	check(bike_surge_threshold(&s, &c, &t), "threshold: exists once warmed up and moving");
+	ws = s;
+	ws.moving_time_us = c.surge_warmup_us - 1;
+	t = 1234;
+	check(!bike_surge_threshold(&ws, &c, &t) && t == 1234, "threshold: none one microsecond before the warm-up");
+	ws.moving_time_us = c.surge_warmup_us;
+	check(bike_surge_threshold(&ws, &c, &t), "threshold: present exactly at the warm-up");
+	ws = s;
+	ws.moving = false;
+	t = 1234;
+	check(!bike_surge_threshold(&ws, &c, &t) && t == 1234, "threshold: none when not moving");
+	{
+		BikeEffortState fresh;
+		bike_effort_init(&fresh, &c);
+		check(!bike_surge_threshold(&fresh, &c, &t), "threshold: none on a fresh engine");
+	}
+
+	/* 2. values, FTP 200 W: floor 100 W, ratio 1.2; first with min-pct 0.6 (the old default), then the default 0.8 */
+	bike_effort_config_default(&c, 200);
+	check(c.surge_ratio == 78643 && c.surge_min_pct == 52429, "threshold: the default is ratio 1.2 and min-pct 0.8");
+	c.surge_min_pct = 39322; /* 0.6 */
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 120 * 65536) <= 256, "threshold: at the baseline floor it is 120 W (min-pct = ratio * floor)");
+	check(bike_surge_threshold_w(&c, 40 * 65536) == bike_surge_threshold_w(&c, 100 * 65536),
+	      "threshold: a baseline below the floor is floored like the detector's");
+	check(bike_surge_threshold_w(&c, 0) == bike_surge_threshold_w(&c, 100 * 65536), "threshold: baseline 0 is floored");
+	check(abs(bike_surge_threshold_w(&c, 200 * 65536) - 240 * 65536) <= 256, "threshold: a high baseline gives ratio * baseline (240 W)");
+	check(abs(bike_surge_threshold_w(&c, 150 * 65536) - 180 * 65536) <= 256, "threshold: 150 W baseline gives 180 W");
+	c.surge_min_pct = 52429; /* 0.8 (default): the min-pct floor of 160 W binds below a 133.3 W baseline */
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 160 * 65536) <= 256, "threshold: below the min-pct floor it is min_pct * ftp (160 W)");
+	check(abs(bike_surge_threshold_w(&c, 120 * 65536) - 160 * 65536) <= 256, "threshold: 120 W baseline still on the min-pct floor");
+	check(abs(bike_surge_threshold_w(&c, 140 * 65536) - 168 * 65536) <= 256, "threshold: 140 W baseline is on the ratio side (168 W)");
+	/* the other end of the keys: ratio 2.0 with min-pct 1.0 (200 W), and ratio 1.05 with min-pct 0 */
+	c.surge_ratio = 131072;
+	c.surge_min_pct = 65536;
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 200 * 65536) <= 256, "threshold: ratio 2.0 on the 100 W floor gives 200 W, the same as min-pct 1.0");
+	check(abs(bike_surge_threshold_w(&c, 150 * 65536) - 300 * 65536) <= 256, "threshold: ratio 2.0 on a 150 W baseline gives 300 W");
+	c.surge_ratio = 68813;
+	c.surge_min_pct = 0;
+	check(abs(bike_surge_threshold_w(&c, 100 * 65536) - 105 * 65536) <= 256, "threshold: ratio 1.05, no min-pct: 105 W on the floor");
+	check(abs(bike_surge_threshold_w(&c, 200 * 65536) - 210 * 65536) <= 256, "threshold: ratio 1.05 on a 200 W baseline gives 210 W");
+	bike_effort_config_default(&c, 200);
+	check(bike_surge_threshold_w(&c, INT32_MAX) == INT32_MAX, "threshold: saturates instead of overflowing");
+
+	/* 3. exactness against the real detector: the threshold is the first smoothed power that starts a surge */
+	for (a = 0; a < sizeof ftps / sizeof ftps[0]; ++a)
+		for (b = 0; b < sizeof mins / sizeof mins[0]; ++b)
+			for (r = 0; r < sizeof ratios / sizeof ratios[0]; ++r)
+			{
+				warm_engine(&w, &ws, ftps[a], 150);
+				w.surge_min_pct = mins[b];
+				w.surge_ratio = ratios[r];
+				for (k = 0; k < 40; ++k)
+				{
+					const bq16 base = (bq16)((int64_t)ftps[a] * 65536 * k / 12 + (int64_t)k * 7919);
+					const bq16 fl = (bq16)((int64_t)ftps[a] * w.baseline_floor_pct);
+					const bq16 floored = base > fl ? base : fl;
+					const bq16 thr = bike_surge_threshold_w(&w, base);
+
+					++tried;
+					if (!detector_starts(&w, &ws, floored, thr) || detector_starts(&w, &ws, floored, thr - 1) ||
+					    bike_surge_threshold_w(&w, floored) != thr)
+					{
+						if (bad++ < 5)
+							printf("  mismatch ftp %u min %d ratio %d base %ld thr %ld\n", ftps[a], (int)mins[b], (int)ratios[r], (long)base, (long)thr);
+					}
+				}
+			}
+	printf("surge threshold: %ld baselines x configs against the detector, %ld mismatches\n", tried, bad);
+	check(bad == 0, "threshold: equals the first smoothed power at which the detector starts a surge");
+
+	/* 4. along a real run (FTP 230 W, 150 W with two 20 s bursts): the candidate time runs exactly while the
+	 *    threshold exists and fast >= threshold, and a start event only happens at or above the threshold (the
+	 *    marker cannot disagree with the detector).  The default rule and the other keys' values, the bursts
+	 *    chosen so that either the ratio or the min-pct decides whether the rides surge. */
+	{
+		static const struct { bq16 ratio, min; unsigned burst_w, starts; const char *what; } rides[] = {
+			{ 78643, 52429, 330, 2, "default, 330 W bursts" },
+			{ 78643, 52429, 200, 2, "default, 200 W bursts: above 0.8 x FTP (184 W) and 1.2 x baseline" },
+			{ 78643, 65536, 200, 0, "ratio 1.2, min-pct 1.0 (230 W): a 200 W burst is too low" },
+			{ 78643, 39322, 165, 0, "ratio 1.2, min-pct 0.6: 165 W is below 1.2 x baseline" },
+			/* 150 W steady already beats 1.05 x the baseline (it is still rising, about 141 W at 59 s): one surge from the
+			 * end of the warm-up that never ends */
+			{ 68813, 0, 165, 1, "ratio 1.05, no min-pct: 150 W steady is already a surge" },
+			/* the first burst lifts the baseline (about 160 W at 80 s, 166 W early in the second burst), so the
+			 * smoothed power never reaches 2.0 x baseline again */
+			{ 131072, 65536, 330, 1, "ratio 2.0, min-pct 1.0: the first burst only" },
+			{ 131072, 65536, 250, 0, "ratio 2.0, min-pct 1.0: 250 W is not twice the baseline" }
+		};
+		unsigned n;
+
+		for (n = 0; n < sizeof rides / sizeof rides[0]; ++n)
+		{
+			BikeEffortInput in;
+			BikeEffortSignals out;
+			unsigned i, starts = 0, agree = 0;
+			long disagree = 0;
+			char what[160];
+
+			bike_effort_config_default(&c, 230);
+			c.surge_ratio = rides[n].ratio;
+			c.surge_min_pct = rides[n].min;
+			bike_effort_init(&s, &c);
+			memset(&in, 0, sizeof in);
+			in.has_sample = in.link_up = in.power_valid = true;
+			in.cadence_rpm = 90 * 65536;
+			for (i = 0; i < 160u * 1000000u / DT_US; ++i)
+			{
+				const unsigned sec = (unsigned)((uint64_t)i * DT_US / 1000000u);
+				const unsigned watts = ((sec >= 60 && sec < 80) || (sec >= 120 && sec < 140)) ? rides[n].burst_w : 150;
+				bq16 thr = 0;
+				int above;
+
+				in.seq = i;
+				in.power_w = (bq16)(watts * 65536);
+				bike_effort_step(&s, &c, DT_US, &in, &out);
+				above = bike_surge_threshold(&s, &c, &thr) && s.fast_w >= thr;
+				if (thr != 0 && thr != bike_surge_threshold_w(&c, out.baseline_w))
+					++disagree; /* the signals' floored baseline gives the same threshold as the state's */
+				if (out.events & BIKE_EV_SURGE_START)
+				{
+					++starts;
+					if (!above)
+						++disagree;
+				}
+				if (!s.surging && !(out.events & BIKE_EV_SURGE_START))
+				{
+					if ((s.surge_cand_us > 0) != (above != 0))
+						++disagree;
+					else
+						++agree;
+				}
+			}
+			printf("surge threshold: along a ride (%s) %u starts, %u candidate checks agree, %ld disagree\n", rides[n].what,
+			       starts, agree, disagree);
+			sprintf(what, "threshold ride (%s): %u surges started", rides[n].what, rides[n].starts);
+			check(starts == rides[n].starts, what);
+			sprintf(what, "threshold ride (%s): the marker and the detector never disagree", rides[n].what);
+			check(disagree == 0, what);
+		}
+	}
+
+	/* 5. gauge scale: max(1.5 * ftp, 1.25 * threshold) */
+	bike_effort_config_default(&c, 200);
+	check(bike_surge_gauge_scale_w(&c, false, 999 * 65536) == 300 * 65536, "scale: 1.5 x FTP without a threshold (threshold ignored)");
+	check(bike_surge_gauge_scale_w(&c, true, 120 * 65536) == 300 * 65536, "scale: 1.5 x FTP while 1.25 x threshold is lower");
+	check(bike_surge_gauge_scale_w(&c, true, 240 * 65536) == 300 * 65536, "scale: tie at a 240 W threshold");
+	check(bike_surge_gauge_scale_w(&c, true, 400 * 65536) == 500 * 65536, "scale: 1.25 x threshold when that is larger");
+	{
+		bq16 thr = 0;
+		warm_engine(&c, &s, 200, 400); /* a high baseline pushes the threshold past 1.2 x FTP */
+		check(bike_surge_threshold(&s, &c, &thr) && thr <= bike_surge_gauge_scale_w(&c, true, thr), "scale: the marker is always on the scale");
+	}
+}
+
+/* A fresh sample without power invents no watts: effort, baseline and surge stay at zero, no surge starts
+ * (not even from a warmed-up, surging engine), moving still follows the cadence; power coming back restarts
+ * the baseline and the warm-up like the start of a ride. */
+static void check_no_power(void)
+{
+	BikeEffortConfig c;
+	BikeEffortState s;
+	BikeEffortInput in;
+	BikeEffortSignals out;
+	unsigned i, starts = 0, nonzero = 0;
+	int moving = 1;
+
+	warm_engine(&c, &s, 200, 300);
+	s.surging = true; /* as if a surge were running when the power reading disappears */
+	memset(&in, 0, sizeof in);
+	in.has_sample = in.link_up = true; /* power_valid stays false */
+	in.cadence_rpm = 90 * 65536;
+	for (i = 0; i < 60u * 1000000u / DT_US; ++i)
+	{
+		in.seq = 1000 + i;
+		bike_effort_step(&s, &c, DT_US, &in, &out);
+		starts += (out.events & BIKE_EV_SURGE_START) != 0;
+		nonzero += out.power_w != 0 || out.effort_w != 0 || out.effort_norm != 0 || out.baseline_w != 0 ||
+		           out.surge != 0 || out.surging;
+		if (i > 100)
+			moving &= out.moving;
+		if (!out.no_power)
+			nonzero++;
+	}
+	check(starts == 0 && nonzero == 0, "no power: effort, baseline, surge and power stay zero, no surge starts");
+	check(moving, "no power: moving still follows the cadence");
+	check(s.moving_time_us == 0 && s.baseline_w == 0, "no power: baseline and warm-up are held at the start");
+	in.power_valid = true;
+	in.power_w = 150 * 65536;
+	in.seq = 99999;
+	bike_effort_step(&s, &c, DT_US, &in, &out);
+	check(!out.no_power && out.power_w == 150 * 65536 && out.effort_w > 0, "no power: a power reading ends it");
+}
+
+static void check_surge_cue(void)
+{
+	const uint32_t dt = 28750u;
+	uint32_t rem = 0, t = 0, lit = 0, flashes = 0;
+	int prev = 0;
+
+	check(!bike_surge_cue_lit(0), "cue: not lit when idle");
+	check(bike_surge_cue_step(0, dt, 0, false) == 0, "cue: stays idle without a start");
+	check(bike_surge_cue_step(0, dt, 0, true) == 0, "cue: a surge already running does not start a cue");
+	rem = bike_surge_cue_step(0, dt, BIKE_EV_SURGE_START, true);
+	check(rem == BIKE_SURGE_CUE_US && bike_surge_cue_lit(rem), "cue: SURGE_START sets 1.5 s and starts lit");
+	/* count it down in gameplay time (frame dt), as bike.c does */
+	while (rem > 0 && t < 3000000u)
+	{
+		const int l = bike_surge_cue_lit(rem);
+		if (l)
+			++lit;
+		if (l && !prev)
+			++flashes;
+		prev = l;
+		rem = bike_surge_cue_step(rem, dt, 0, true);
+		t += dt;
+	}
+	printf("surge cue: ran %u us in %u us frames, lit %u frames, %u flashes\n", (unsigned)t, (unsigned)dt, (unsigned)lit, (unsigned)flashes);
+	check(t >= BIKE_SURGE_CUE_US && t < BIKE_SURGE_CUE_US + dt, "cue: lasts 1.5 s of summed frame time");
+	check(flashes == 3, "cue: three flashes");
+	/* frame-rate independent: 1 ms frames and 100 ms frames light about the same total time */
+	{
+		const uint32_t dts[2] = { 1000u, 100000u };
+		uint32_t n, lit_us[2] = { 0, 0 };
+
+		for (n = 0; n < 2; ++n)
+		{
+			rem = bike_surge_cue_step(0, dts[n], BIKE_EV_SURGE_START, true);
+			while (rem > 0)
+			{
+				if (bike_surge_cue_lit(rem))
+					lit_us[n] += dts[n];
+				rem = bike_surge_cue_step(rem, dts[n], 0, true);
+			}
+		}
+		check(lit_us[0] >= 740000u && lit_us[0] <= 760000u && lit_us[1] >= 600000u && lit_us[1] <= 900000u,
+		      "cue: about 0.75 s lit in total whatever the frame rate");
+	}
+	check(bike_surge_cue_step(1000000u, dt, BIKE_EV_SURGE_END, false) == 0, "cue: ends when the surge ends");
+	check(bike_surge_cue_step(100u, dt, 0, true) == 0, "cue: the last frame saturates at 0");
+	check(bike_surge_cue_step(100000u, dt, BIKE_EV_SURGE_START, true) == BIKE_SURGE_CUE_US, "cue: a new start restarts it");
+	check(!bike_surge_cue_lit(BIKE_SURGE_CUE_US + 1), "cue: out-of-range remaining time is not lit");
+}
+
 /* ---- main ------------------------------------------------------------------- */
 
 static Row cbuf[MAX_TICKS], gbuf[MAX_TICKS];
+
+/* ---- golden generator ---------------------------------------------------------
+ * Writes what this engine does for a feed, in the golden CSV format (columns
+ * tick,effort_w,effort_norm,moving,stale,surging,surge_meter,events,baseline_w,surge),
+ * from the very same run_case() the comparison above uses. */
+
+#define GOLDEN_TAIL_TICKS 400 /* silence after the last feed row, so the stop is in the golden */
+
+static void write_golden(FILE *f, const Row *rows, unsigned ticks)
+{
+	unsigned t;
+
+	fputs("tick,effort_w,effort_norm,moving,stale,surging,surge_meter,events,baseline_w,surge\n", f);
+	for (t = 0; t < ticks; ++t)
+	{
+		const Row *r = &rows[t];
+		fprintf(f, "%u,%.5f,%.6f,%d,%d,%d,%.6f,%d,%.5f,%.6f\n", t, r->effort_w, r->norm, r->moving,
+		        r->stale, r->surging, r->meter, r->events, r->baseline, r->surge);
+	}
+}
+
+/* ticks of a case: the last feed row plus the tail (a const: feed has no end: pass TICKS) */
+static unsigned golden_ticks(const BikeFeed *bf)
+{
+	if (bf->is_const || bf->count == 0)
+		return 0;
+	return bf->rows[bf->count - 1].tick + GOLDEN_TAIL_TICKS;
+}
+
+static int dump_effort(const char *feed, unsigned ftp, unsigned ticks)
+{
+	BikeFeed bf;
+
+	if (!bike_feed_load(&bf, feed))
+	{
+		fprintf(stderr, "cannot load feed %s\n", feed);
+		return 1;
+	}
+	if (ticks == 0)
+		ticks = golden_ticks(&bf);
+	if (ticks == 0 || ticks > MAX_TICKS)
+	{
+		fprintf(stderr, "give TICKS (1..%d) for this feed\n", MAX_TICKS);
+		bike_feed_free(&bf);
+		return 1;
+	}
+	run_case(&bf, ftp, ticks, cbuf);
+	write_golden(stdout, cbuf, ticks);
+	bike_feed_free(&bf);
+	return 0;
+}
+
+/* Reads REPO_ROOT/test/bike/effort/golden/manifest.txt for the cases (name feed ftp_w; its ticks
+ * column is recomputed) and writes the CSVs and the manifest into OUTDIR (default: that folder). */
+static int gen_golden(const char *root, const char *outdir)
+{
+	char path[1024], line[512], name[128], feed[128];
+	char names[64][128], feeds[64][128], dir[512];
+	unsigned ftps[64], tickv[64], n = 0, i, ftp, ticks;
+	FILE *man, *out;
+
+	if (strlen(outdir) >= sizeof dir)
+	{
+		fprintf(stderr, "OUTDIR is too long\n");
+		return 1;
+	}
+	strcpy(dir, outdir);
+	snprintf(path, sizeof path, "%s/test/bike/effort/golden/manifest.txt", root);
+	man = fopen(path, "rb");
+	if (man == NULL)
+	{
+		fprintf(stderr, "cannot open %s\n", path);
+		return 1;
+	}
+	while (n < 64 && fgets(line, sizeof line, man) != NULL)
+		if (sscanf(line, "%127s %127s %u %u", name, feed, &ftp, &ticks) == 4)
+		{
+			strcpy(names[n], name);
+			strcpy(feeds[n], feed);
+			ftps[n++] = ftp;
+		}
+	fclose(man);
+
+	for (i = 0; i < n; ++i)
+	{
+		BikeFeed bf;
+
+		snprintf(path, sizeof path, "%s/test/bike/effort/feeds/%s", root, feeds[i]);
+		if (!bike_feed_load(&bf, path))
+		{
+			fprintf(stderr, "cannot load feed %s\n", path);
+			return 1;
+		}
+		ticks = golden_ticks(&bf);
+		if (ticks == 0 || ticks > MAX_TICKS)
+		{
+			fprintf(stderr, "%s: no usable length\n", names[i]);
+			bike_feed_free(&bf);
+			return 1;
+		}
+		run_case(&bf, ftps[i], ticks, cbuf);
+		bike_feed_free(&bf);
+		tickv[i] = ticks;
+		snprintf(path, sizeof path, "%s/%s.csv", dir, names[i]);
+		out = fopen(path, "wb");
+		if (out == NULL)
+		{
+			fprintf(stderr, "cannot write %s\n", path);
+			return 1;
+		}
+		write_golden(out, cbuf, ticks);
+		fclose(out);
+	}
+	snprintf(path, sizeof path, "%s/manifest.txt", dir);
+	out = fopen(path, "wb");
+	if (out == NULL)
+	{
+		fprintf(stderr, "cannot write %s\n", path);
+		return 1;
+	}
+	fputs("# Effort golden data of this repo, generated from its own C engine by\n"
+	      "# tools/bike/gen_effort_golden.sh (run it only after an intentional engine change): do not edit.\n"
+	      "# columns: name feed ftp_w ticks\n", out);
+	for (i = 0; i < n; ++i)
+		fprintf(out, "%s %s %u %u\n", names[i], feeds[i], ftps[i], tickv[i]);
+	fclose(out);
+	printf("wrote %u goldens to %s\n", n, dir);
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -351,16 +793,28 @@ int main(int argc, char **argv)
 
 	if (argc < 2)
 	{
-		printf("usage: bike_effort_test REPO_ROOT [--update-digests]\n");
+		printf("usage: bike_effort_test REPO_ROOT [--update-digests | --dump-effort FEED FTP_W [TICKS] | --gen-golden [OUTDIR]]\n");
 		return 2;
+	}
+	if (argc >= 5 && strcmp(argv[2], "--dump-effort") == 0)
+		return dump_effort(argv[3], (unsigned)strtoul(argv[4], NULL, 10), argc > 5 ? (unsigned)strtoul(argv[5], NULL, 10) : 0);
+	if (argc >= 3 && strcmp(argv[2], "--gen-golden") == 0)
+	{
+		char dir[1024];
+
+		snprintf(dir, sizeof dir, "%s/test/bike/effort/golden", argv[1]);
+		return gen_golden(argv[1], argc > 3 ? argv[3] : dir);
 	}
 
 	check_alpha();
 	check_norm();
 	check_parse();
 	check_feed_const();
+	check_surge_threshold();
+	check_surge_cue();
+	check_no_power();
 
-	sprintf(path, "%s/test/bike/golden/c_digests.txt", argv[1]);
+	snprintf(path, sizeof path, "%s/test/bike/effort/c_digests.txt", argv[1]);
 	dig_in = fopen(path, "rb");
 	if (dig_in != NULL)
 	{
@@ -371,7 +825,7 @@ int main(int argc, char **argv)
 	if (update)
 		dig_out = fopen(path, "wb");
 
-	sprintf(path, "%s/test/bike/golden/manifest.txt", argv[1]);
+	snprintf(path, sizeof path, "%s/test/bike/effort/golden/manifest.txt", argv[1]);
 	man = fopen(path, "rb");
 	if (man == NULL)
 	{
@@ -393,14 +847,14 @@ int main(int argc, char **argv)
 			check(0, "case too long");
 			continue;
 		}
-		sprintf(path, "%s/test/bike/feeds/%s", argv[1], feed);
+		snprintf(path, sizeof path, "%s/test/bike/effort/feeds/%s", argv[1], feed);
 		if (!bike_feed_load(&bf, path))
 		{
 			printf("FAIL %s: cannot load feed %s\n", name, path);
 			++failures;
 			continue;
 		}
-		sprintf(path, "%s/test/bike/golden/%s.csv", argv[1], name);
+		snprintf(path, sizeof path, "%s/test/bike/effort/golden/%s.csv", argv[1], name);
 		if (!read_golden(path, gbuf, ticks))
 		{
 			printf("FAIL %s: cannot read golden %s\n", name, path);

@@ -21,6 +21,8 @@ typedef struct
 {
 	bool master, generator, hud;
 	bool surge_superbomb, surge_sidekick, surge_special, surge_shield;
+	uint16_t surge_ratio_x100; /* 105..200 in steps of 5, default 120: the surge starts at this multiple of the baseline */
+	uint8_t surge_min_pct;     /* 0..100 in steps of 5, default 80: and at this percent of the FTP at least */
 	bool autofire;
 	uint8_t autofire_reserve_pct; /* 0|25|50 */
 	int autofire_key, autofire_key2; /* SDL_Scancode values */
@@ -46,6 +48,10 @@ typedef struct
 #define BIKE_DEFAULT_PORT 8585 /* Flywheel default; it was 8787 until bridge_port_v=2 */
 #define BIKE_FTP_MIN 50
 #define BIKE_FTP_MAX 500
+#define BIKE_SURGE_RATIO_MIN_X100 105 /* surge_ratio 1.05 .. 2.00 in steps of 0.05 */
+#define BIKE_SURGE_RATIO_MAX_X100 200
+#define BIKE_SURGE_RATIO_DEFAULT_X100 120
+#define BIKE_SURGE_MIN_DEFAULT_PCT 80 /* surge_min_pct 0..100 in steps of 5 */
 
 /* The bridge's active rider (the opt-in "rider" message): written by the transport, read by bike.c.
  * ftp_w is always the MEASURED FTP.  An intensity preset (docs/intensity.md in Flywheel) adds an
@@ -79,6 +85,15 @@ typedef struct
 	bool gate, generator_on, lost;
 	bq16 watts, cadence, effort_norm, surge_meter;
 	bool surging, autofire_on, autofire_held;
+	bool no_power; /* the bike reports a sample without power: show "no power", no gauge needle */
+	/* Power gauge: the smoothed power the surge test uses, the gauge's full scale, and the smoothed power
+	 * at which a surge would start (bike_surge_threshold_w(); has_threshold is false before the warm-up
+	 * or when not moving).  All Q16 watts. */
+	bq16 fast_w, gauge_scale_w, threshold_w;
+	bool has_threshold;
+	/* Surge-start cue: gameplay time left (us), and whether it is in a lit flash phase now. */
+	uint32_t cue_us;
+	bool cue_lit;
 } BikeHud;
 
 extern BikeSettings bike_settings; /* edited by menus; read every frame, never cached */

@@ -4,7 +4,7 @@
 #   check_bike.sh BIN DATA_DIR OUT_DIR [--quick|--update]
 #
 # Every case runs a scripted level (--regress-script, fixed seed, no input) with a
-# scripted feed from test/bike/feeds (--regress-bike-feed) and compares frame hashes,
+# scripted feed from test/bike/effort/feeds (--regress-bike-feed) and compares frame hashes,
 # state hashes and the per-tick bike log:
 #   - flag off, and every toggle explicitly off, equal the stock baseline (frames
 #     and state hashes); a feed with the master or generator off leaves frames alone;
@@ -36,7 +36,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN=$1 DATA_DIR=$2 OUT=$3
 MODE=${4:-full}
 BASE="$ROOT/test/bike/regress.txt"
-FEEDS="$ROOT/test/bike/feeds"
+FEEDS="$ROOT/test/bike/effort/feeds"
 mkdir -p "$OUT"
 
 fail() { echo "FAIL bike-$1: $2"; exit 1; }
@@ -111,6 +111,37 @@ for want in "none:8585" "2:8787"; do
 		|| fail config-port "marker $mark: bridge_port=$(cfgval bridge_port) bridge_port_v=$(cfgval bridge_port_v), want $expect / 2"
 done
 echo "PASS bike-config-port: a saved 8787 without bridge_port_v loads as 8585, with it is kept"
+
+# surge_ratio (1.05..2.00 step 0.05) and surge_min_pct (0..100 step 5): kept through load and save, the defaults
+# (1.20 and 80) when the file lacks them, and a value out of range or off the step is ignored like any other bad key.
+surge_cfg() { # surge_ratio-item surge_min_pct-item (either may be empty): runs a save, then the caller reads both back
+	rm -rf "$CFGDIR"; mkdir -p "$CFGDIR"
+	{ printf "section 'ftms'\n\titem 'enabled' 'on'\n"
+	  [ -z "$1" ] || printf "\titem 'surge_ratio' '%s'\n" "$1"
+	  [ -z "$2" ] || printf "\titem 'surge_min_pct' '%s'\n" "$2"; } >"$CFGDIR/opentyrian.cfg"
+	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-user-root="$CFGDIR" --regress-user-files \
+		>"$OUT/cfg-surge.log" 2>&1 || fail config-surge "the save run failed"
+}
+# saved ratio : saved min : ratio after the save : min after the save (empty = the key is absent / the default)
+for want in "1.5:65:1.50:65" "1.05:0:1.05:0" "2:100:2.00:100" "1.35:5:1.35:5" ":::" "1.07:82:1.20:80" "1.00:105:1.20:80" \
+            "2.05:120:1.20:80" "x:y:1.20:80" "1.255:-5:1.20:80" "1.:5x:1.20:80"; do
+	IFS=: read -r in_r in_m want_r want_m <<<"$want"
+	[ -n "$want_r" ] || { want_r=1.20; want_m=80; }
+	surge_cfg "$in_r" "$in_m"
+	[ "$(cfgval surge_ratio)" = "$want_r" ] && [ "$(cfgval surge_min_pct)" = "$want_m" ] \
+		|| fail config-surge "saved ratio '$in_r' min '$in_m': got $(cfgval surge_ratio) / $(cfgval surge_min_pct), want $want_r / $want_m"
+done
+for bad in surge_ratio=1.07 surge_ratio=1.00 surge_ratio=2.05 surge_ratio=abc surge_min_pct=82 surge_min_pct=105 surge_min_pct=-5; do
+	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" "${SCEN[@]}" --regress-frames=1 \
+		--regress-out="$OUT/cfg-bad.f" --regress-bike-set="$bad" >"$OUT/cfg-bad.log" 2>&1 \
+		&& fail config-surge "--regress-bike-set=$bad was accepted"
+done
+for good in surge_ratio=1.05 surge_ratio=2 surge_ratio=1.25 surge_min_pct=0 surge_min_pct=100 surge_min_pct=65; do
+	SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" "${SCEN[@]}" --regress-frames=1 \
+		--regress-out="$OUT/cfg-bad.f" --regress-bike-set="$good" >"$OUT/cfg-bad.log" 2>&1 \
+		|| fail config-surge "--regress-bike-set=$good was rejected"
+done
+echo "PASS bike-config-surge: surge_ratio / surge_min_pct round-trip, default to 1.20 / 80 when absent, bad values ignored or refused"
 
 if [ "$MODE" = "--quick" ]; then
 	echo "PASS bike (quick)"
@@ -222,6 +253,18 @@ for k in sgbomb:shield_fast sgbomb:sidekick_fast sgbomb:special_extra sgside:sup
 	[ "$(cov "${k%%:*}" "${k##*:}")" = 0 ] || fail surge "${k%%:*} touched ${k##*:} with that effect off"
 done
 for l in sgbomb sgside sgspec sgshield sgall; do differs sgoff "$l" || fail surge "$l is not observable against the all-off run"; done
+# The surge rule keys: surge_min_pct is a floor of that percent of the FTP, surge_ratio the multiple of the baseline.
+# surge.csv peaks at 320 W: at FTP 500 the default floor (80 % = 400 W) is never reached, 60 % (300 W) is; a higher
+# ratio makes surges rarer and a lower one (with no floor) commoner.  Counted as ticks spent surging (column 4).
+surging_ticks() { awk '$4==1 { n++ } END { print n+0 }' "$OUT/$1.blog"; }
+sg sgmin80 surge_superbomb=0,ftp=500
+sg sgmin60 surge_superbomb=0,ftp=500,surge_min_pct=60
+sg sgr200 surge_superbomb=0,surge_ratio=2.00
+sg sgr105 surge_superbomb=0,surge_ratio=1.05,surge_min_pct=0
+[ "$(surging_ticks sgmin80)" = 0 ] && [ "$(surging_ticks sgmin60)" -gt 0 ] || fail surge-keys "min-pct: FTP 500 surged $(surging_ticks sgmin80) ticks at 80 % and $(surging_ticks sgmin60) at 60 %"
+[ "$(surging_ticks sgr200)" -lt "$(surging_ticks sgoff)" ] && [ "$(surging_ticks sgoff)" -lt "$(surging_ticks sgr105)" ] \
+	|| fail surge-keys "ratio: surging ticks $(surging_ticks sgr200) / $(surging_ticks sgoff) / $(surging_ticks sgr105) for 2.00 / 1.20 / 1.05 are not increasing"
+echo "PASS bike-surge-keys: surge_min_pct 80 / 60 at FTP 500 surges $(surging_ticks sgmin80) / $(surging_ticks sgmin60) ticks; surge_ratio 2.00 / 1.20 / 1.05 surges $(surging_ticks sgr200) / $(surging_ticks sgoff) / $(surging_ticks sgr105) ticks"
 [ "$(cov sgbomb superbombs_cooled)" -ge 1 ] || fail surge "the superbomb cooldown never held a grant back"
 grep -q "end state: .*superbombs=$(cov sgbomb superbombs) " "$OUT/sgbomb.log" || fail surge "end-state superbombs differ from the grants"
 echo "PASS bike-surge: superbombs +$(cov sgbomb superbombs), sidekick x$(cov sgside sidekick_fast), special x$(cov sgspec special_extra), shield x$(cov sgshield shield_fast) (each only with its toggle, deterministic, observable)"
@@ -378,6 +421,8 @@ snap_screen() { # label screen
 snap_screen snap-menu bike-menu
 snap_screen snap-menu-nav bike-menu-nav
 snap_screen snap-menu-edit bike-menu-edit
+snap_screen snap-menu-surge bike-menu-surge # Surge Ratio 1.30x and Surge Min Power 70 %, the two rows past the first screen
+cmp -s "$OUT/snap-menu-nav.bmp" "$OUT/snap-menu-surge.bmp" && fail snap-menu-surge "the key script did not change the menu"
 cmp -s "$OUT/snap-menu.bmp" "$OUT/snap-menu-nav.bmp" && fail snap-menu "the key script did not change the menu"
 # the same menu with a rider from the bridge in force: the FTP row shows its value and name
 SDL_VIDEO_DRIVER=dummy SDL_AUDIO_DRIVER=dummy "$BIN" --data="$DATA_DIR" --regress-screen=bike-menu \

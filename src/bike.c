@@ -44,8 +44,11 @@ static BikeEffortConfig eff_cfg;
 static BikeEffortState eff_state;
 static bool eff_ready = false;
 static uint32_t eff_cfg_ftp = 0;
+static unsigned eff_cfg_ratio_x100 = 0, eff_cfg_min_pct = 0; /* the surge settings eff_cfg was built from */
 static BikeEffortSignals sig;
 static BikeHud hud;
+/* Surge-start cue timer.  Presentation only: not in any digest, not read by the rules. */
+static uint32_t surge_cue_us = 0;
 
 static uint64_t clock_us = 0;
 static uint32_t tick_count = 0;
@@ -72,6 +75,8 @@ void bike_settings_default(BikeSettings *s)
 {
 	memset(s, 0, sizeof *s);
 	s->surge_superbomb = true; /* only matters once master, a source and the engine are on */
+	s->surge_ratio_x100 = BIKE_SURGE_RATIO_DEFAULT_X100;
+	s->surge_min_pct = BIKE_SURGE_MIN_DEFAULT_PCT;
 	s->autofire_key = SDL_SCANCODE_A;
 	s->autofire_key2 = SDL_SCANCODE_APPLICATION;
 	s->pointer_sens_pct = 100;
@@ -118,6 +123,35 @@ static bool parse_uint(const char *v, unsigned lo, unsigned hi, unsigned *out)
 	return true;
 }
 
+/* "1.2", "1.20" or "2" -> hundredths (120, 120, 200); at most two decimals, nothing else. */
+static bool parse_hundredths(const char *v, unsigned *out)
+{
+	unsigned whole = 0, frac = 0, digits = 0;
+	const char *p = v;
+
+	if (*p < '0' || *p > '9')
+		return false;
+	for (; *p >= '0' && *p <= '9'; ++p)
+	{
+		whole = whole * 10 + (unsigned)(*p - '0');
+		if (whole > 1000)
+			return false;
+	}
+	if (*p == '.')
+	{
+		for (++p; *p >= '0' && *p <= '9' && digits < 2; ++p, ++digits)
+			frac = frac * 10 + (unsigned)(*p - '0');
+		if (digits == 0)
+			return false;
+		if (digits == 1)
+			frac *= 10;
+	}
+	if (*p != '\0')
+		return false;
+	*out = whole * 100 + frac;
+	return true;
+}
+
 bool bike_settings_set(const char *key, const char *value)
 {
 	BikeSettings *s = &bike_settings;
@@ -141,6 +175,20 @@ bool bike_settings_set(const char *key, const char *value)
 	BOOL_KEY("remote_buttons", remote_buttons)
 #undef BOOL_KEY
 
+	if (strcmp(key, "surge_ratio") == 0)
+	{
+		if (!parse_hundredths(value, &n) || n < BIKE_SURGE_RATIO_MIN_X100 || n > BIKE_SURGE_RATIO_MAX_X100 || n % 5 != 0)
+			return false;
+		s->surge_ratio_x100 = (uint16_t)n;
+		return true;
+	}
+	if (strcmp(key, "surge_min_pct") == 0)
+	{
+		if (!parse_uint(value, 0, 100, &n) || n % 5 != 0)
+			return false;
+		s->surge_min_pct = (uint8_t)n;
+		return true;
+	}
 	if (strcmp(key, "pointer_smoothing") == 0)
 		return parse_bool(value, &b); /* retired key: accepted and ignored so old configs and scripts still load */
 	if (strcmp(key, "autofire") == 0)
@@ -286,7 +334,7 @@ bool bike_settings_set_list(const char *list)
 
 static const char *const config_keys[] = {
 	"enabled", "generator", "hud", "surge_superbomb", "surge_sidekick", "surge_special", "surge_shield",
-	"autofire", "autofire_reserve", "autofire_key", "autofire_key2", "air_mouse", "pointer_sensitivity",
+	"surge_ratio", "surge_min_pct", "autofire", "autofire_reserve", "autofire_key", "autofire_key2", "air_mouse", "pointer_sensitivity",
 	"touch", "remote_buttons", "ftp", "ftp_source", "floor", "superbomb_cooldown", "bias", "strength", "cap",
 	"bridge_host", "bridge_port"
 };
@@ -298,6 +346,7 @@ static void setting_text(const char *key, char *out, size_t cap)
 	const BikeSettings *s = &bike_settings;
 	unsigned num = 0;
 	const char *str = NULL;
+	char ratio[8];
 
 	if (strcmp(key, "enabled") == 0) str = onoff(s->master);
 	else if (strcmp(key, "generator") == 0) str = onoff(s->generator);
@@ -306,6 +355,12 @@ static void setting_text(const char *key, char *out, size_t cap)
 	else if (strcmp(key, "surge_sidekick") == 0) str = onoff(s->surge_sidekick);
 	else if (strcmp(key, "surge_special") == 0) str = onoff(s->surge_special);
 	else if (strcmp(key, "surge_shield") == 0) str = onoff(s->surge_shield);
+	else if (strcmp(key, "surge_ratio") == 0)
+	{
+		snprintf(ratio, sizeof ratio, "%u.%02u", (unsigned)s->surge_ratio_x100 / 100, (unsigned)s->surge_ratio_x100 % 100);
+		str = ratio;
+	}
+	else if (strcmp(key, "surge_min_pct") == 0) num = s->surge_min_pct;
 	else if (strcmp(key, "autofire") == 0) str = s->autofire ? "toggle" : "off";
 	else if (strcmp(key, "autofire_reserve") == 0) num = s->autofire_reserve_pct;
 	else if (strcmp(key, "autofire_key") == 0) str = SDL_GetScancodeName((SDL_Scancode)s->autofire_key);
@@ -690,6 +745,7 @@ void bike_level_start(void)
 {
 	refresh_rider_ftp();
 	level_active = true;
+	surge_cue_us = 0;
 	bike_rules_level_start();
 }
 
@@ -697,6 +753,7 @@ void bike_level_end(void)
 {
 	level_active = false;
 	gate_prev = false;
+	surge_cue_us = 0;
 }
 
 /* ---- gate ---------------------------------------------------------------- */
@@ -749,6 +806,9 @@ static void calib_row(void)
 
 /* Sample age saturates instead of wrapping (a 32-bit microsecond count wraps after ~71.6 minutes,
  * which would make a silent link look fresh again). */
+/* hundredths -> Q16.16, rounded to nearest: 120 -> 78643 (1.2), 80 -> 52429 (0.8) */
+static bq16 pct_to_q16(unsigned hundredths) { return (bq16)(((uint64_t)hundredths * 65536 + 50) / 100); }
+
 static uint32_t age_sat(uint64_t d) { return d > UINT32_MAX ? UINT32_MAX : (uint32_t)d; }
 
 void bike_frame_tick(void)
@@ -764,9 +824,16 @@ void bike_frame_tick(void)
 	last_dt_us = (uint32_t)(((uint64_t)getFramePeriodTicks10() * frames * 1000) / 1024);
 	clock_us += last_dt_us;
 
-	if (bike_ftp_w() != eff_cfg_ftp || !eff_ready)
+	/* The surge rule comes from the settings (menu or [ftms]); like the FTP it is picked up between
+	 * ticks, and the state is kept, so a change shows as the next threshold, not as a restart. */
+	if (bike_ftp_w() != eff_cfg_ftp || bike_settings.surge_ratio_x100 != eff_cfg_ratio_x100 ||
+	    bike_settings.surge_min_pct != eff_cfg_min_pct || !eff_ready)
 	{
 		bike_effort_config_default(&eff_cfg, bike_ftp_w());
+		eff_cfg.surge_ratio = pct_to_q16(bike_settings.surge_ratio_x100);
+		eff_cfg.surge_min_pct = pct_to_q16(bike_settings.surge_min_pct);
+		eff_cfg_ratio_x100 = bike_settings.surge_ratio_x100;
+		eff_cfg_min_pct = bike_settings.surge_min_pct;
 		if (!eff_ready)
 		{
 			bike_effort_init(&eff_state, &eff_cfg);
@@ -827,7 +894,11 @@ void bike_frame_tick(void)
 	else
 		memset(&sig, 0, sizeof sig);
 
-	bike_rules_frame(&sig, link_up && have_sample, bike_generator_on(), last_dt_us);
+	surge_cue_us = bike_surge_cue_step(surge_cue_us, last_dt_us, sig.events, sig.surging);
+
+	/* No power reading counts as a missing link for the income: the existing blend returns it to the stock
+	 * refill (after the usual delay), exactly as when the link is lost; no new path. */
+	bike_rules_frame(&sig, link_up && have_sample && !sig.no_power, bike_generator_on(), last_dt_us);
 	bike_controls_frame();
 	gate_prev = gate;
 
@@ -837,12 +908,21 @@ void bike_frame_tick(void)
 	hud.generator_on = bike_generator_on();
 	hud.lost = have_sample && !link_up;
 	hud.watts = sig.power_w;
+	hud.no_power = sig.no_power;
 	hud.cadence = sig.cadence_rpm;
 	hud.effort_norm = sig.effort_norm;
 	hud.surge_meter = sig.surge_meter;
 	hud.surging = sig.surging;
 	hud.autofire_on = bike_autofire_active();
 	hud.autofire_held = bike_autofire_held_back();
+	if (source != BIKE_SOURCE_OFF)
+	{
+		hud.fast_w = eff_state.fast_w;
+		hud.has_threshold = bike_surge_threshold(&eff_state, &eff_cfg, &hud.threshold_w);
+		hud.gauge_scale_w = bike_surge_gauge_scale_w(&eff_cfg, hud.has_threshold, hud.threshold_w);
+		hud.cue_us = surge_cue_us;
+		hud.cue_lit = bike_surge_cue_lit(surge_cue_us);
+	}
 
 	if (calib_path != NULL && gate)
 		calib_row();
@@ -895,7 +975,8 @@ void bike_status(BikeStatus *out)
 	{
 		out->link = hud.link;
 		out->has_sample = have_sample;
-		out->power_valid = out->cadence_valid = have_sample;
+		out->cadence_valid = have_sample;
+		out->power_valid = have_sample && !hud.no_power;
 		out->watts = q16_round_uint(hud.watts);
 		out->rpm = q16_round_uint(hud.cadence);
 	}

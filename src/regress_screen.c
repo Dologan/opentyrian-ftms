@@ -490,15 +490,19 @@ void regress_screen_run(void)
 		setupMenuStartAt(SETUP_MENU_GRAPHICS);
 		setupMenu();
 	}
-	else if (screen_is("bike-menu") || screen_is("bike-menu-nav") || screen_is("bike-menu-edit"))
+	else if (screen_is("bike-menu") || screen_is("bike-menu-nav") || screen_is("bike-menu-edit") ||
+	         screen_is("bike-menu-surge"))
 	{
 		// The Bike and Controls setup screen (bike_menu.c).  The -nav and -edit
 		// variants queue a key script that walks to the FTP row and steps it, or
-		// edits the bridge address, so the snapshot shows the result.
+		// edits the bridge address, so the snapshot shows the result.  -surge walks
+		// down to Surge Ratio, raises it twice (1.30x), then lowers Surge Min Power twice (70 %).
 		if (screen_is("bike-menu-nav"))
 			bike_menu_regress_keys("___]]]]]]]]_]]]]]]]]_]]]]");
 		else if (screen_is("bike-menu-edit"))
 			bike_menu_regress_keys("__#<<<<<<<<<<<<<<10.0.0.5:8788");
+		else if (screen_is("bike-menu-surge"))
+			bike_menu_regress_keys("___________]]_[[");
 		setupMenuStartAt(SETUP_MENU_BIKE);
 		setupMenu();
 	}

@@ -24,7 +24,7 @@ enum { BIKE_EV_MOVING_START=1, BIKE_EV_MOVING_STOP=2, BIKE_EV_SURGE_START=4,
 typedef struct { uint32_t ftp_w; bq16 moving_on_rpm, moving_off_rpm;          /* 25, 15 */
   uint32_t moving_grace_us, silent_stop_us, start_confirm_us;                 /* 1.5 s, 3 s, 0.25 s */
   uint32_t effort_tau_us, fast_tau_us, baseline_tau_us;                       /* 3 s, 1.5 s, 75 s */
-  bq16 baseline_floor_pct, surge_ratio, surge_min_pct;                        /* .5, 1.2, .6 */
+  bq16 baseline_floor_pct, surge_ratio, surge_min_pct;                        /* .5, 1.2, .8 (ratio and min from [ftms] surge_ratio, surge_min_pct) */
   uint32_t surge_hold_us, surge_exit_us, surge_fill_us, surge_warmup_us;      /* 2,1,8,30 s */
   bq16 coast_max_rpm, coast_drop_frac; uint32_t coast_window_us; uint8_t coast_resume_samples; /* 45,.35,5 s,3 */
 } BikeEffortConfig;
@@ -97,7 +97,7 @@ uint32_t bike_tick_count(void);
 **`src/bike_rules.[ch]`**: mapping C, link-loss blend and surge effects. It may include `player.h` and `varz.h`.
 ```c
 void     bike_rules_level_start(void);                     /* remainder acc = 0 */
-void     bike_rules_frame(const BikeEffortSignals *sig, bool link_up); /* blend + superbomb grant */
+void     bike_rules_frame(const BikeEffortSignals *sig, bool link_up, bool active, uint32_t dt_us); /* blend + superbomb grant; active = generator on */
 unsigned bike_rules_power_add(unsigned stock_add);         /* replaces powerAdd at the refill */
 unsigned bike_rules_shield_wait(unsigned stock_wait);      /* 15 → 15 - round(7·n) */
 unsigned bike_rules_sidekick_charge_ticks(unsigned stock); /* 20 → 10 while surging */
@@ -109,7 +109,7 @@ int32_t  bike_income_q16(unsigned G, bq16 effort_norm, uint8_t floor, uint16_t b
   - `G` is the `powerAdd` read at the call site, i.e. the equipped generator.
   - Income is Q16 per frame and goes through an exact remainder accumulator: `acc += income; add = acc >> 16; acc &= 0xFFFF`.
 - **Link-loss blend**: weight `w` (Q16) ramps toward 1 at 1/2 s per second once the link has been down for 1.5 s, and back toward 0 when the link returns. `out = lerp(income, stock_add·65536, w)`.
-  - `w = 1` at session start, and whenever the gate goes from closed to open (e.g. a mid-level toggle), so income ramps in and never jumps.
+  - `w = 1` at session start, and whenever the generator turns on (`active`, i.e. `bike_generator_on()`, goes from false to true: the gate opening, a mid-level toggle or the first sample arriving), so income ramps in and never jumps.
 
 **`src/bike_controls.[ch]`**: auto-fire, air mouse, touch and remote buttons, everything that edits input. **(dev)** These are kept out of `bike_rules`, because controls do not need a data source.
 ```c
@@ -126,7 +126,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
   - `bool bike_ws_open(const char *host, uint16_t port)`
   - `void bike_ws_poll(BikeMailbox *mb, uint64_t now_us)`
   - `void bike_ws_close(void)`
-- After the upgrade it sends `{"type":"hello","client":"game","v":1,"caps":["rider"]}` (the opt-in rider message, §3a).
+- After the upgrade it sends `{"type":"hello","client":"game","v":1,"caps":["rider","intensity"]}` (the opt-in rider and intensity messages, §3a).
 - It parses `telemetry` messages (`v == 1` only; `null` sets the field's `*_valid = false`), `status.state` and `rider` messages (handled before the `v` check; they do not count as proof of the protocol for the reconnect backoff).
 - Reconnect backoff is 0.5, 1, 2, 4 then 5 s.
 - `arrival_us` comes from `SDL_GetTicksNS()/1000`.
@@ -139,6 +139,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
 - **`[ftms]` keys** (the same names are accepted by `bike_settings_set`):
   - `enabled` (master), `generator`, `hud`
   - `surge_superbomb`, `surge_sidekick`, `surge_special`, `surge_shield`
+  - `surge_ratio` (the smoothed power must reach this multiple of the baseline: `1.05` to `2.00` in steps of `0.05`, default `1.20`, written with two decimals) and `surge_min_pct` (and at least this percent of the FTP: 0 to 100 in steps of 5, default 80; it was a fixed 60 until 2026-10-20). A value out of range or off the step is rejected like any other bad key (`--regress-bike-set` refuses to start, a config load logs a warning and keeps the default); a config without them loads the defaults. They reach the engine through `bike_frame_tick()`, so a change in the menu applies on the next tick, the threshold marker and the gauge scale follow it, and the engine state is kept.
   - `autofire` (`off`|`toggle`), `autofire_reserve` (0|25|50), `autofire_key`, `autofire_key2` (SDL scancode names; defaults `A` and `Application`, i.e. the remote's Menu key, pending the T3b.0 probe)
   - `air_mouse`, `pointer_sensitivity`, `touch`, `remote_buttons` (independent: menu translation no longer needs Air Mouse; `pointer_smoothing` was never implemented and is retired: old configs still load, a config with Air Mouse on and no `remote_buttons` key loads with Remote Buttons on)
   - `ftp`, `ftp_source` (`auto` | `manual`, see §3a), `floor`, `bias`, `strength` (gain), `cap`
@@ -157,7 +158,7 @@ void bike_controls_inject(const char *action, int a, int b); /* --regress-bike-e
 - **Regress pin**: next to `regress.c:1356`, call `bike_settings_default()` and force `master = 0`. Then apply `--regress-bike-set`. `--regress-bike-feed` implies `master = 1, generator = 1`. Set `bike_settings_pinned`, which makes `bike_config_save()` leave `[ftms]` untouched.
 - **Menus**: `SETUP_MENU_BIKE = 4` (`opentyr.h:68`, `opentyr.c:283`).
   - The Setup menu gets a "Bike and Controls..." row.
-  - **(dev)** The shipped Bike menu (`src/bike_menu.c`) is one flat list of 19 rows (18 settings + Done): master, Bike Power, Bridge, FTP, FTP Source, Strength, Floor, the four Surge toggles, Auto-fire, Auto-fire Reserve, Air Mouse, Remote Buttons, Pointer Speed, Touch Controls and Bike HUD. It shows 9 rows at a time and scrolls; the live status line and the help line stay pinned below. There are no child menus.
+  - **(dev)** The shipped Bike menu (`src/bike_menu.c`) is one flat list of 21 rows (20 settings + Done): master, Bike Power, Bridge, FTP, FTP Source, Strength, Floor, the four Surge toggles, Surge Ratio (`1.20x`, 1.05 to 2.00, step 0.05) and Surge Min Power (`80 %` of the FTP, 0 to 100, step 5), Auto-fire, Auto-fire Reserve, Air Mouse, Remote Buttons, Pointer Speed, Touch Controls and Bike HUD. It shows 9 rows at a time and scrolls; the live status line and the help line stay pinned below. There are no child menus.
   - Mid-game: add a C-string "Bike and Controls" row to `JE_inGameSetup` (`mainint.c:1514`). It is hidden when `isNetworkGame` and calls `setupMenu()` with `setup_menu_start = SETUP_MENU_BIKE`.
   - Changes take effect on the next `bike_frame_tick()`, because nothing is cached.
 
@@ -194,7 +195,7 @@ bike_gate_open() = master && level_active && !twoPlayerMode && !onePlayerAction 
 | Auto-fire | `mainint.c:3769`, after the keyboard block and before "Reverse controls" (`3770`). This is before network packing (`3872-3882`). | `if (playerNum_ == 1 && bike_controls_autofire(power)) button[0] = true;` Manual fire is OR-ed earlier, so the reserve never blocks it. |
 | Pointer | `mainint.c:3735` (`mouseXC += mouseXR`) | `bike_controls_pointer(&mouseXC, &mouseYC)` when `air_mouse`. The ±30 clamp at `3788-3795` is kept. |
 | Sidekick surge | `mainint.c:4731` | `charge_ticks = bike_rules_sidekick_charge_ticks(20);` |
-| Special surge | `varz.c:633`, after `specialWait--` | `if (bike_rules_extra_special_tick() && specialWait > 0) specialWait--;` |
+| Special surge | `varz.c:638`, after `specialWait--` | `if (specialWait > 0 && bike_rules_extra_special_tick()) specialWait--;` (the wait is tested first, so the tick, which also counts coverage, is only evaluated while a wait is running) |
 | Superbomb | inside `bike_rules_frame` | On `BIKE_EV_OVERDRIVE`: `++player[0].superbombs` like the pickup at `mainint.c:5091`, but capped at `BIKE_SUPERBOMB_CAP` (5, not the pickup's 10) and at most once per `superbomb_cooldown` (default 60 s of gameplay time, counted from `dt`, so frame-rate invariant; the cooldown carries across levels and retries of a session and resets only on a new game, `JE_initPlayerData`). Measured: a Q200B ride fires ~15 overdrive events in 90 s, so uncapped it was too generous |
 | Transport | `keyboard.c:189` `handleSdlEvents()` | `bike_service()` |
 | HUD | `modern_hud.c:875` status panel; generator row `662` | Reads `bike_hud()` only. It never writes, never calls `mt_rand`, and never touches `bike_settings`. |
@@ -209,7 +210,7 @@ dt_us = getFramePeriodTicks10() * max(frameCountMax,1) * 1000 / 1024
 - `pentiumMode` alternates 2 and 3, and level events can change `frameCountMax`. Both are read at tick time.
 - `bike_clock_us += dt_us` per tick.
 
-**Feed CSV** (`test/bike/feeds/*.csv`): `tick,watts,cadence,connected`.
+**Feed CSV** (`test/bike/effort/feeds/*.csv`): `tick,watts,cadence,connected`.
 - `tick` is `bike_tick_count()`: the number of `bike_frame_tick` calls since process start, starting at 0. Ticks must be strictly ascending.
 - Each `connected = 1` row is a **new notification**: `seq++`, and its arrival is the clock at that tick.
 - An empty `watts` or `cadence` field means null.
@@ -230,17 +231,17 @@ dt_us = getFramePeriodTicks10() * max(frameCountMax,1) * 1000 / 1024
 ## 5. Effort engine port and golden fixtures
 
 - **Port**:
-  - Front half of `step()`: fresh/stale selection, power or the cadence-only fallback curve when `powerW` is null.
+  - Front half of `step()`: fresh/stale selection, power, or no power when `powerW` is null: a fresh sample without power invents no watts (since 2026-10-20; the cadence-times-FTP curve is gone). Moving/stopped still follows the cadence; `effort_w`, `effort_norm`, `baseline_w`, `surge` and `surge_meter` stay 0 (the baseline and warm-up are held at the start of a ride), no surge can start and a running one ends; `BikeEffortSignals.no_power` is set. `bike.c` then passes the link as down to `bike_rules_frame()`, so the income blends back to the stock refill by the existing link-loss path (after its usual delay; from level start it is stock at once). The HUD and the Classic readout show "no power" instead of watts and the gauge has no fill and no threshold marker.
   - `Ema`, `piecewise`, `clamp`.
   - `effortNorm`.
   - `updateMoving` with the 0.25 s start confirmation and coast-down (`updateCoastDown`, `start`, `stop`).
   - `updateSurge` with baseline warm-up (`tau = min(75, 5 + movingTime)`, and `dt/4` while surging), `surgeIntensity`, the surge meter and overdrive.
 - **Skip**: zones, streak, compliance, the power model and level inference.
 - **Do not port `RideFlow`**: Tyrian has no world-speed or pause. Only the 1.5 s sensor-lost constant is reused, in the blend.
-- **Golden data** (moved to Flywheel): Flywheel owns the feeds and the goldens, in `shared/conformance/effort/` (generated by its `gen_golden.mjs` from the real TypeScript engine, guarded by a test and a CI diff, stamped with `EFFORT_ENGINE_VERSION`). This repo keeps pinned copies in `test/bike/feeds`, `test/bike/golden`, plus the protocol fixtures in `test/bike/protocol/tolerance` and `test/bike/protocol/rider`, and `tools/bike/trace_to_feed.py` (54 files in all).
-  - `test/bike/VENDORED_FROM` records the Flywheel commit, the engine version and a hash of every vendored file; `tools/bike/vendor.py verify` (run by `tools/check_bike_effort.sh`, so by `make regress`) fails on an edited, missing or extra file. To change the data, change Flywheel and run `python3 -I tools/bike/vendor.py sync <flywheel checkout>`. `test/bike/golden/c_digests.txt` is this repo's own and is never overwritten.
+- **Golden data** (owned by this repo since 2026-10-20): the effort rule (surge included) is a game mechanic, so each game owns it. The feeds are in `test/bike/effort/feeds` and the goldens in `test/bike/effort/golden`. The goldens started as a byte-for-byte copy of what Flywheel's TypeScript engine produced (Flywheel commit `a34faa5`, `game/conformance/effort`, engine version 1); Flywheel now keeps its own copy with its web game and nothing here is synced from it any more. Since then the goldens are written by this repo's C engine: `tools/bike/gen_effort_golden.sh` (the `--gen-golden` and `--dump-effort FEED FTP_W [TICKS]` modes of `test/unit/bike_effort_test.c`) rebuilds them from the feeds and the case list in `golden/manifest.txt`. Run it only after an intentional change of the engine or its defaults, review `git diff test/bike/effort`, then `tools/check_bike_effort.sh --update` and `tools/check_bike.sh BIN DATA OUT --update`. Run on the unchanged engine it reproduced the TypeScript goldens within the tolerances below, with a worst deviation of 0.002 W in `effort_w`, 0.0005 W in the baseline, 0.00003 in `effort_norm`, 0.00002 in `surge_meter` and 0.00005 in `surge`, and the same transition and event ticks, on all 14 cases (2026-10-20).
+  - What is still vendored from Flywheel (MIT) is the protocol contract: the fixtures in `test/bike/protocol/tolerance` and `test/bike/protocol/rider` (53 files). `test/bike/VENDORED_FROM` records the Flywheel commit and a hash of every vendored file; `tools/bike/vendor.py verify` (run by `tools/check_bike_effort.sh`, so by `make regress`) fails on an edited, missing or extra file. To change them, change Flywheel and run `python3 -I tools/bike/vendor.py sync <flywheel checkout>`. `test/bike/effort/c_digests.txt` is this repo's own.
   - Semantics (the same in Flywheel's `conformance.ts`): `dt = 0.02875` s per tick, a new sample object per `connected=1` row, `age = clock - arrival`, `linkUp` from the row, columns `tick,effort_w,effort_norm,moving,stale,surging,surge_meter,events,baseline_w,surge`.
-  - Feeds: const 150, ramp, dropout (2 s and 5 s), stop/coast, surge after 30 s of warm-up, FTP 50/500 edges, and Q200B runs 1 and 2 (made from the recorded rides with `trace_to_feed.py`).
+  - Feeds: const 150, ramp, dropout (2 s and 5 s), stop/coast, surge after 30 s of warm-up, FTP 50/500 edges, and Q200B runs 1 and 2 (made from recorded rides with Flywheel's `trace_to_feed.py`, which stays in Flywheel).
 - **C test**: `test/unit/bike_effort_test.c` is built by `tools/check_bike_effort.sh` the way `check_game_rules.sh` is built (`-std=iso9899:1999 -pedantic -Werror`, no SDL, no data), and runs in `regress-quick` and `regress`.
 - **Tolerances**:
   - `effort_w` within ±(0.25 W + 0.2 %)

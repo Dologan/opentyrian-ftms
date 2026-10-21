@@ -17,7 +17,7 @@
 # forces the master switch and the generator on.  It is not for players.  The user's config and saves
 # go to a throw-away HOME.
 #
-# Environment: FLYWHEEL_DIR (default /home/user/flywheel), UV (default uv on PATH, else
+# Environment: FLYWHEEL_DIR (Flywheel checkout, no default; unset = SKIP), UV (default uv on PATH, else
 #   /root/.local/bin/uv), RIDE (a raw ride .jsonl; default q200b-run1 from the Flywheel fixtures),
 #   BRIDGE_PORT (8793), LEVEL (1:3), KEEP=1 keeps the work directory.
 set -u
@@ -25,7 +25,8 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$ROOT/opentyrian}"
 DATA="${2:-$ROOT/data}"
-FLYWHEEL_DIR="${FLYWHEEL_DIR:-/home/user/flywheel}"
+FLYWHEEL_DIR="${FLYWHEEL_DIR:-}"
+[ -n "$FLYWHEEL_DIR" ] || { echo "SKIP bike-bridge: set FLYWHEEL_DIR to a Flywheel checkout"; exit 0; }
 UV="${UV:-$(command -v uv 2>/dev/null || echo /root/.local/bin/uv)}"
 RIDE="${RIDE:-$FLYWHEEL_DIR/shared/fixtures/rides/q200b-run1.raw.jsonl}"
 PORT="${BRIDGE_PORT:-8793}"

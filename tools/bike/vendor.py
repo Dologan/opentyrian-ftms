@@ -1,13 +1,12 @@
-"""Vendor Flywheel's shared test data and tools into this repo, and check they were not edited here.
+"""Vendor Flywheel's protocol fixtures into this repo, and check they were not edited here.
 
-Flywheel (MIT) owns the effort-engine conformance data, the protocol tolerance fixtures and the
-trace-to-feed converter. This repo keeps pinned copies so its tests need no Flywheel checkout:
+Flywheel (MIT) owns the wire protocol, so it owns the protocol test fixtures. This repo keeps
+pinned copies so its tests need no Flywheel checkout:
 
-    flywheel/shared/conformance/effort/feeds/   ->  test/bike/feeds/
-    flywheel/shared/conformance/effort/golden/  ->  test/bike/golden/   (c_digests.txt stays ours)
     flywheel/shared/protocol/fixtures/tolerance ->  test/bike/protocol/tolerance/
     flywheel/shared/protocol/fixtures/rider     ->  test/bike/protocol/rider/
-    flywheel/bridge/tools/trace_to_feed.py      ->  tools/bike/trace_to_feed.py
+
+The effort engine and its test data (test/bike/effort/) are this repo's own, not vendored.
 
 usage:
     python3 -I tools/bike/vendor.py sync FLYWHEEL_DIR   copy the files, rewrite test/bike/VENDORED_FROM
@@ -22,7 +21,6 @@ Standard library only.
 from __future__ import annotations
 
 import hashlib
-import re
 import shutil
 import subprocess
 import sys
@@ -34,15 +32,11 @@ SOURCE_URL = "https://github.com/Dologan/flywheel"
 
 # (flywheel path, path here, is a directory)
 MAP = [
-    ("shared/conformance/effort/feeds", "test/bike/feeds", True),
-    ("shared/conformance/effort/golden", "test/bike/golden", True),
     ("shared/protocol/fixtures/tolerance", "test/bike/protocol/tolerance", True),
     ("shared/protocol/fixtures/rider", "test/bike/protocol/rider", True),
-    ("bridge/tools/trace_to_feed.py", "tools/bike/trace_to_feed.py", False),
 ]
 # Files inside a vendored directory that belong to this repo and are never touched.
-OURS = {"test/bike/golden/c_digests.txt"}
-ENGINE_VERSION_RE = re.compile(r"^# effort-engine-version: (\S+)$", re.MULTILINE)
+OURS: set[str] = set()
 
 
 def _digest(path: Path) -> str:
@@ -73,8 +67,8 @@ def _tree_digest(entries: dict[str, str]) -> str:
 
 
 def sync(flywheel: Path) -> int:
-    if not (flywheel / "shared" / "conformance" / "effort").is_dir():
-        print(f"{flywheel} is not a Flywheel checkout with shared/conformance/effort", file=sys.stderr)
+    if not (flywheel / "shared" / "protocol" / "fixtures").is_dir():
+        print(f"{flywheel} is not a Flywheel checkout with shared/protocol/fixtures", file=sys.stderr)
         return 2
     for src_rel, dst_rel, is_dir in MAP:
         src, dst = flywheel / src_rel, ROOT / dst_rel
@@ -103,16 +97,13 @@ def sync(flywheel: Path) -> int:
         text=True,
         check=False,
     ).stdout.strip()
-    manifest = (ROOT / "test/bike/golden/manifest.txt").read_text()
-    version = ENGINE_VERSION_RE.search(manifest)
     entries = {_rel(p): _digest(p) for p in vendored_files()}
     lines = [
-        "# Pinned copies of files owned by Flywheel (MIT). Do not edit them here: change Flywheel,",
+        "# Pinned copies of Flywheel's protocol fixtures (MIT). Do not edit them here: change Flywheel,",
         "# then re-sync with `python3 -I tools/bike/vendor.py sync <flywheel checkout>`.",
         "# tools/check_bike_effort.sh verifies this record (`vendor.py verify`).",
         f"source {SOURCE_URL}",
         f"commit {commit or 'unknown'}{'+uncommitted' if dirty else ''}",
-        f"effort-engine-version {version.group(1) if version else 'unknown'}",
         f"tree-sha256 {_tree_digest(entries)}",
         *[f"file {name} {digest}" for name, digest in sorted(entries.items())],
     ]
